@@ -2,8 +2,10 @@ import hashlib
 import uuid
 import os
 from fastapi import UploadFile
+from fastapi import HTTPException
 from sqlalchemy.orm import Session
 from db.models.core_models import Report, generate_uuidv7
+from constants import MAX_UPLOAD_BYTES
 
 # Mock object storage path for local development
 STORAGE_DIR = "mock_storage"
@@ -25,12 +27,21 @@ class IntakeService:
         """
         
         # 1. Read and Hash
-        contents = await file.read()
+        contents = await file.read(MAX_UPLOAD_BYTES + 1)
+        if len(contents) > MAX_UPLOAD_BYTES:
+            raise HTTPException(
+                status_code=413,
+                detail=f"File exceeds the {MAX_UPLOAD_BYTES} byte upload limit",
+            )
         file_hash = hashlib.sha256(contents).hexdigest()
         
-        # 2. Save to Immutable Object Storage (Mock)
-        file_object_key = f"{tenant_id}/{file_hash}_{file.filename}"
-        local_path = os.path.join(STORAGE_DIR, f"{file_hash}_{file.filename}")
+        # 2. Save to tenant-scoped object storage (Mock)
+        suffix = os.path.splitext(file.filename or "")[1].lower()
+        storage_filename = f"{file_hash}{suffix}"
+        file_object_key = f"{tenant_id}/{storage_filename}"
+        tenant_storage_dir = os.path.join(STORAGE_DIR, str(tenant_id))
+        os.makedirs(tenant_storage_dir, exist_ok=True)
+        local_path = os.path.join(tenant_storage_dir, storage_filename)
         
         with open(local_path, "wb") as f:
             f.write(contents)

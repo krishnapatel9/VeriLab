@@ -119,12 +119,14 @@ export default function Intake() {
                   <CheckCircle className="w-5 h-5 text-green-600" />
                   <h4 className="text-sm font-medium text-green-900">Upload Successful</h4>
                 </div>
-                <button
-                  onClick={() => navigate(`/review/${uploadResult.report_id}`)}
-                  className="flex items-center gap-1 text-sm font-medium text-blue-700 bg-blue-100 hover:bg-blue-200 px-3 py-1.5 rounded transition-colors"
-                >
-                  Go to Review <ArrowRight className="w-4 h-4" />
-                </button>
+                {(user?.role === 'reviewer' || user?.role === 'admin') && (
+                  <button
+                    onClick={() => navigate(`/review/${uploadResult.report_id}`)}
+                    className="flex items-center gap-1 text-sm font-medium text-blue-700 bg-blue-100 hover:bg-blue-200 px-3 py-1.5 rounded transition-colors"
+                  >
+                    Go to Review <ArrowRight className="w-4 h-4" />
+                  </button>
+                )}
               </div>
               <div className="bg-white p-3 rounded border border-green-100 text-xs font-mono text-slate-700 overflow-x-auto space-y-1">
                 <p><span className="font-semibold">Report ID:</span> {uploadResult.report_id}</p>

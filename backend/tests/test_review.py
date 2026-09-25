@@ -35,7 +35,7 @@ def _setup_processed_report(db):
 
 
 class TestVerifyResult:
-    def test_verify_sets_status_verified_as_reported(self, client, db):
+    def test_verify_sets_status_verified_as_reported(self, client, db, reviewer_headers):
         report, results, _ = _setup_processed_report(db)
         # Pick any result
         result = results[0]
@@ -43,11 +43,12 @@ class TestVerifyResult:
         resp = client.post(
             f"/api/v1/review/results/{result.id}/verify",
             json={"reviewer_user_id": REVIEWER_UUID},
+            headers=reviewer_headers,
         )
         assert resp.status_code == 200
         assert resp.json()["verification_status"] == "verified_as_reported"
 
-    def test_verify_closes_linked_review_item(self, client, db):
+    def test_verify_closes_linked_review_item(self, client, db, reviewer_headers):
         report, results, review_items = _setup_processed_report(db)
 
         # Find the result with a linked open ReviewItem (TSH)
@@ -56,6 +57,7 @@ class TestVerifyResult:
         client.post(
             f"/api/v1/review/results/{tsh_result.id}/verify",
             json={"reviewer_user_id": REVIEWER_UUID},
+            headers=reviewer_headers,
         )
 
         # The ReviewItem must now be resolved
@@ -67,18 +69,19 @@ class TestVerifyResult:
         assert linked_item.status == "resolved"
         assert linked_item.resolved_at is not None
 
-    def test_verify_unknown_result_returns_404(self, client, db):
+    def test_verify_unknown_result_returns_404(self, client, db, reviewer_headers):
         import uuid
         fake_id = uuid.uuid4()
         resp = client.post(
             f"/api/v1/review/results/{fake_id}/verify",
             json={"reviewer_user_id": REVIEWER_UUID},
+            headers=reviewer_headers,
         )
         assert resp.status_code == 404
 
 
 class TestCorrectResult:
-    def test_correct_creates_result_correction_row(self, client, db):
+    def test_correct_creates_result_correction_row(self, client, db, reviewer_headers):
         report, results, _ = _setup_processed_report(db)
         tsh = next(r for r in results if r.test_name_raw == "TSH")
 
@@ -90,6 +93,7 @@ class TestCorrectResult:
                 "reason": "OCR misread",
                 "comment": "The < sign was missed",
             },
+            headers=reviewer_headers,
         )
 
         corrections = db.query(ResultCorrection).filter(
@@ -98,7 +102,7 @@ class TestCorrectResult:
         assert len(corrections) == 1
         assert corrections[0].corrected_value_raw == "0.01"
 
-    def test_correct_does_not_mutate_original_value(self, client, db):
+    def test_correct_does_not_mutate_original_value(self, client, db, reviewer_headers):
         """Safety invariant: original value_raw must never change."""
         report, results, _ = _setup_processed_report(db)
         tsh = next(r for r in results if r.test_name_raw == "TSH")
@@ -111,6 +115,7 @@ class TestCorrectResult:
                 "corrected_value_raw": "0.01",
                 "reason": "OCR misread",
             },
+            headers=reviewer_headers,
         )
 
         db.expire_all()
@@ -118,7 +123,7 @@ class TestCorrectResult:
         # Original value_raw MUST be unchanged
         assert updated_result.value_raw == original_value
 
-    def test_correct_sets_status_verified_with_correction(self, client, db):
+    def test_correct_sets_status_verified_with_correction(self, client, db, reviewer_headers):
         report, results, _ = _setup_processed_report(db)
         tsh = next(r for r in results if r.test_name_raw == "TSH")
 
@@ -129,11 +134,12 @@ class TestCorrectResult:
                 "corrected_value_raw": "0.01",
                 "reason": "OCR misread",
             },
+            headers=reviewer_headers,
         )
         assert resp.status_code == 200
         assert resp.json()["verification_status"] == "verified_with_correction"
 
-    def test_correct_closes_linked_review_item(self, client, db):
+    def test_correct_closes_linked_review_item(self, client, db, reviewer_headers):
         report, results, _ = _setup_processed_report(db)
         tsh = next(r for r in results if r.test_name_raw == "TSH")
 
@@ -144,6 +150,7 @@ class TestCorrectResult:
                 "corrected_value_raw": "0.01",
                 "reason": "OCR misread",
             },
+            headers=reviewer_headers,
         )
 
         db.expire_all()

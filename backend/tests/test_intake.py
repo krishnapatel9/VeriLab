@@ -23,24 +23,24 @@ def _make_pdf_file(content: bytes = b"%PDF-1.4 fake-pdf-content") -> dict:
 
 
 class TestUploadHappyPath:
-    def test_upload_returns_200_with_report_id(self, client):
-        resp = client.post(UPLOAD_URL, files=_make_pdf_file())
+    def test_upload_returns_200_with_report_id(self, client, uploader_headers):
+        resp = client.post(UPLOAD_URL, files=_make_pdf_file(), headers=uploader_headers)
         assert resp.status_code == 200
         data = resp.json()
         assert "report_id" in data
         assert "file_hash" in data
         assert data["status"] == "intake_pending"
 
-    def test_file_hash_is_sha256_of_content(self, client, db):
+    def test_file_hash_is_sha256_of_content(self, client, db, uploader_headers):
         content = b"%PDF-1.4 unique-content-abc"
         expected_hash = hashlib.sha256(content).hexdigest()
 
-        resp = client.post(UPLOAD_URL, files=_make_pdf_file(content))
+        resp = client.post(UPLOAD_URL, files=_make_pdf_file(content), headers=uploader_headers)
         assert resp.status_code == 200
         assert resp.json()["file_hash"] == expected_hash
 
-    def test_report_row_created_in_db(self, client, db):
-        resp = client.post(UPLOAD_URL, files=_make_pdf_file())
+    def test_report_row_created_in_db(self, client, db, uploader_headers):
+        resp = client.post(UPLOAD_URL, files=_make_pdf_file(), headers=uploader_headers)
         assert resp.status_code == 200
         report_id_str = resp.json()["report_id"]
 
@@ -52,8 +52,8 @@ class TestUploadHappyPath:
         assert str(report.tenant_id) == str(SYNTH_TENANT_ID)
         assert str(report.uploader_user_id) == str(SYNTH_UPLOADER_ID)
 
-    def test_upload_emits_audit_event(self, client, db):
-        resp = client.post(UPLOAD_URL, files=_make_pdf_file())
+    def test_upload_emits_audit_event(self, client, db, uploader_headers):
+        resp = client.post(UPLOAD_URL, files=_make_pdf_file(), headers=uploader_headers)
         assert resp.status_code == 200
 
         events = db.query(AuditEvent).filter(
@@ -64,24 +64,27 @@ class TestUploadHappyPath:
 
 
 class TestUploadValidation:
-    def test_txt_file_rejected(self, client):
+    def test_txt_file_rejected(self, client, uploader_headers):
         resp = client.post(
             UPLOAD_URL,
             files={"file": ("report.txt", io.BytesIO(b"not a pdf"), "text/plain")},
+            headers=uploader_headers,
         )
         assert resp.status_code == 400
         assert "Invalid file type" in resp.json()["detail"]
 
-    def test_exe_file_rejected(self, client):
+    def test_exe_file_rejected(self, client, uploader_headers):
         resp = client.post(
             UPLOAD_URL,
             files={"file": ("malware.exe", io.BytesIO(b"MZ"), "application/octet-stream")},
+            headers=uploader_headers,
         )
         assert resp.status_code == 400
 
-    def test_png_file_accepted(self, client):
+    def test_png_file_accepted(self, client, uploader_headers):
         resp = client.post(
             UPLOAD_URL,
             files={"file": ("scan.png", io.BytesIO(b"\x89PNG\r\n"), "image/png")},
+            headers=uploader_headers,
         )
         assert resp.status_code == 200

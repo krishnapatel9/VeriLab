@@ -4,7 +4,7 @@ import uuid
 import asyncio
 from sqlalchemy.orm import Session
 from db.models.core_models import Report, Result, ReviewItem, generate_uuidv7
-from constants import PHASE1_VALUE_CONFIDENCE_REVIEW_BELOW, SYNTH_TENANT_ID
+from constants import PHASE1_VALUE_CONFIDENCE_REVIEW_BELOW, settings
 
 
 class OCRProvider(ABC):
@@ -119,8 +119,12 @@ class TesseractOCRProvider(OCRProvider):
 class OCRService:
     def __init__(self, db_session: Session, provider: OCRProvider = None):
         self.db = db_session
-        # MVP: Default to real Tesseract integration
-        self.provider = provider if provider else TesseractOCRProvider()
+        if provider:
+            self.provider = provider
+        elif settings.ocr_provider == "mock":
+            self.provider = MockOCRProvider()
+        else:
+            self.provider = TesseractOCRProvider()
 
     async def process_report(self, report_id: uuid.UUID):
         """
@@ -138,7 +142,7 @@ class OCRService:
 
         try:
             # 2. Extract data
-            extracted_data = await self.provider.extract_data(report.file_hash)
+            extracted_data = await self.provider.extract_data(report.file_object_key)
 
             # 3. Map extracted data to Result + ReviewItem models
             for item in extracted_data.get("results", []):

@@ -85,14 +85,14 @@ class TestTenantIsolation:
         assert str(report_a.tenant_id) == str(SYNTH_TENANT_ID)
         assert str(report_a.tenant_id) != str(tenant_b_id)
 
-    def test_review_returns_404_for_nonexistent_report(self, client, db):
+    def test_review_returns_404_for_nonexistent_report(self, client, db, reviewer_headers):
         fake_id = uuid.uuid4()
-        resp = client.get(f"/api/v1/review/reports/{fake_id}")
+        resp = client.get(f"/api/v1/review/reports/{fake_id}", headers=reviewer_headers)
         assert resp.status_code == 404
 
-    def test_consultation_returns_404_for_nonexistent_report(self, client, db):
+    def test_consultation_returns_404_for_nonexistent_report(self, client, db, doctor_headers):
         fake_id = uuid.uuid4()
-        resp = client.get(f"/api/v1/consultation/{fake_id}")
+        resp = client.get(f"/api/v1/consultation/{fake_id}", headers=doctor_headers)
         assert resp.status_code == 404
 
     def test_results_from_tenant_a_not_in_tenant_b_query(self, db):

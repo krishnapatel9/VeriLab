@@ -20,6 +20,13 @@ from sqlalchemy.orm import sessionmaker, Session
 
 from db.models.core_models import Base
 from api.dependencies import get_db
+from constants import (
+    SYNTH_DOCTOR_ID,
+    SYNTH_REVIEWER_ID,
+    SYNTH_TENANT_ID,
+    SYNTH_UPLOADER_ID,
+)
+from core.security import create_access_token
 
 # ── Shared engine for the whole test session ─────────────────────────────────
 # Use a named on-disk temp file so in-memory state isn't lost between sessions.
@@ -90,3 +97,27 @@ def client(setup_database):
 
     app.dependency_overrides.clear()
     os.environ.pop("TESTING", None)
+
+
+def _auth_headers(user_id, role):
+    token = create_access_token(
+        subject=user_id,
+        role=role,
+        tenant_id=SYNTH_TENANT_ID,
+    )
+    return {"Authorization": f"Bearer {token}"}
+
+
+@pytest.fixture
+def uploader_headers():
+    return _auth_headers(SYNTH_UPLOADER_ID, "uploader")
+
+
+@pytest.fixture
+def reviewer_headers():
+    return _auth_headers(SYNTH_REVIEWER_ID, "reviewer")
+
+
+@pytest.fixture
+def doctor_headers():
+    return _auth_headers(SYNTH_DOCTOR_ID, "doctor")

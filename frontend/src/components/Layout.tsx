@@ -1,5 +1,5 @@
 import { Outlet, useNavigate, useLocation } from "react-router-dom";
-import { LogOut, LayoutDashboard, Upload, FileText, CheckCircle } from "lucide-react";
+import { LogOut, LayoutDashboard, Upload } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 
 export default function Layout() {

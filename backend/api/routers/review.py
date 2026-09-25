@@ -22,14 +22,26 @@ def get_report_for_review(
     Fetches a specific report along with all its extracted OCR results and
     open ReviewItems. Used by the Clinical Review UI to populate the side-by-side view.
     """
-    report = db.query(Report).filter(Report.id == report_id).first()
+    report = (
+        db.query(Report)
+        .filter(Report.id == report_id, Report.tenant_id == current_user.tenant_id)
+        .first()
+    )
     if not report:
         raise HTTPException(status_code=404, detail="Report not found")
 
-    results = db.query(Result).filter(Result.report_id == report_id).all()
+    results = (
+        db.query(Result)
+        .filter(Result.report_id == report_id, Result.tenant_id == current_user.tenant_id)
+        .all()
+    )
     review_items = (
         db.query(ReviewItem)
-        .filter(ReviewItem.report_id == report_id, ReviewItem.status == "open")
+        .filter(
+            ReviewItem.report_id == report_id,
+            ReviewItem.tenant_id == current_user.tenant_id,
+            ReviewItem.status == "open",
+        )
         .all()
     )
 
@@ -62,7 +74,11 @@ def verify_result(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_role(["reviewer", "admin"]))
 ):
-    result = db.query(Result).filter(Result.id == result_id).first()
+    result = (
+        db.query(Result)
+        .filter(Result.id == result_id, Result.tenant_id == current_user.tenant_id)
+        .first()
+    )
     if not result:
         raise HTTPException(status_code=404, detail="Result not found")
 
@@ -72,7 +88,11 @@ def verify_result(
     # Close any open ReviewItem linked to this result (Task 1.3)
     open_items = (
         db.query(ReviewItem)
-        .filter(ReviewItem.result_id == result_id, ReviewItem.status == "open")
+        .filter(
+            ReviewItem.result_id == result_id,
+            ReviewItem.tenant_id == current_user.tenant_id,
+            ReviewItem.status == "open",
+        )
         .all()
     )
     now = datetime.now(timezone.utc)
@@ -109,7 +129,11 @@ def correct_result(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_role(["reviewer", "admin"]))
 ):
-    result = db.query(Result).filter(Result.id == result_id).first()
+    result = (
+        db.query(Result)
+        .filter(Result.id == result_id, Result.tenant_id == current_user.tenant_id)
+        .first()
+    )
     if not result:
         raise HTTPException(status_code=404, detail="Result not found")
 
@@ -133,7 +157,11 @@ def correct_result(
     # Close any open ReviewItem linked to this result
     open_items = (
         db.query(ReviewItem)
-        .filter(ReviewItem.result_id == result_id, ReviewItem.status == "open")
+        .filter(
+            ReviewItem.result_id == result_id,
+            ReviewItem.tenant_id == current_user.tenant_id,
+            ReviewItem.status == "open",
+        )
         .all()
     )
     now = datetime.now(timezone.utc)

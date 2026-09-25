@@ -53,7 +53,11 @@ def get_consultation_view(
     Critical results (is_critical=True) bypass the test-name filter and are
     always included in selected_results (FR-33).
     """
-    report = db.query(Report).filter(Report.id == report_id).first()
+    report = (
+        db.query(Report)
+        .filter(Report.id == report_id, Report.tenant_id == current_user.tenant_id)
+        .first()
+    )
     if not report:
         raise HTTPException(status_code=404, detail="Report not found")
 
@@ -62,6 +66,7 @@ def get_consultation_view(
         db.query(Result)
         .filter(
             Result.report_id == report_id,
+            Result.tenant_id == current_user.tenant_id,
             Result.verification_status.in_(_VERIFIED_STATUSES),
         )
         .all()

@@ -88,12 +88,13 @@ class TestAuditHashChain:
         assert events[1].prev_event_hash == events[0].event_hash
         assert events[2].prev_event_hash == events[1].event_hash
 
-    def test_upload_action_emits_audit_event(self, client, db):
+    def test_upload_action_emits_audit_event(self, client, db, uploader_headers):
         """Integration: uploading a report must produce an audit event."""
         import io
         resp = client.post(
             "/api/v1/intake/upload",
             files={"file": ("test.pdf", io.BytesIO(b"%PDF-1.4 test"), "application/pdf")},
+            headers=uploader_headers,
         )
         assert resp.status_code == 200
 
@@ -102,7 +103,7 @@ class TestAuditHashChain:
         ).all()
         assert len(events) >= 1
 
-    def test_verify_action_emits_audit_event(self, client, db):
+    def test_verify_action_emits_audit_event(self, client, db, reviewer_headers):
         """Integration: verifying a result must produce an audit event."""
         import io, asyncio
         from services.ocr_service import OCRService, MockOCRProvider
@@ -121,6 +122,7 @@ class TestAuditHashChain:
         client.post(
             f"/api/v1/review/results/{result.id}/verify",
             json={"reviewer_user_id": str(SYNTH_REVIEWER_ID)},
+            headers=reviewer_headers,
         )
 
         # Use a fresh session to see commits from the client's session
