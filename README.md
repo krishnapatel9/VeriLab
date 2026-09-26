@@ -37,7 +37,7 @@ python -m venv venv
 pip install -r requirements.txt
 
 # Start the server (FastAPI will run on http://127.0.0.1:8000)
-uvicorn main:app --reload
+python -m uvicorn main:app --reload --host 127.0.0.1 --port 8000
 ```
 *Note: The backend seed script automatically creates a development database (`verilab_dev.db`) on the first run.*
 
@@ -63,5 +63,8 @@ Navigate to `http://localhost:5173` in your browser. The database is pre-seeded 
 *   **Reviewer:** `reviewer@synth.verilab` (Verifies OCR results)
 *   **Doctor:** `doctor@synth.verilab` (Views the final consultation)
 
-## ⚠️ Important Note Regarding Git
-If you clone this repository, you may notice `node_modules/` and `venv/` are checked into source control. It is highly recommended to add a `.gitignore` file to ignore these massive dependency directories in the future.
+### Troubleshooting
+
+If the login page reports invalid credentials for every account, verify that the backend is running at `http://127.0.0.1:8000`. The frontend and backend are separate processes, so both terminals must remain open.
+
+For a teammate connecting to a backend running on another computer, set `VITE_API_BASE_URL` in `frontend/.env.local` to the backend computer's reachable address, for example `http://192.168.1.20:8000`, and add the frontend origin to `ALLOWED_ORIGINS` in the backend environment. Restart Vite after changing frontend environment variables.

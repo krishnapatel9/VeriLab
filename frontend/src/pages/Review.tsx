@@ -133,12 +133,14 @@ export default function Review() {
               {reportData.status}
             </span>
           </div>
-          <button
-            onClick={() => navigate(`/consultation/${reportId}`)}
-            className="px-4 py-2 bg-slate-900 text-white text-sm font-medium rounded-md hover:bg-slate-800 transition-colors"
-          >
-            Go to Consultation
-          </button>
+           {(user?.role === 'doctor' || user?.role === 'admin') && (
+             <button
+               onClick={() => navigate(`/consultation/${reportId}`)}
+               className="px-4 py-2 bg-slate-900 text-white text-sm font-medium rounded-md hover:bg-slate-800 transition-colors"
+             >
+               Go to Consultation
+             </button>
+           )}
           <span className="text-sm text-slate-500">
             {user?.role && (
               <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800 mr-2">

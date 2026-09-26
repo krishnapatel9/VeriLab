@@ -17,6 +17,23 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
+function RoleProtectedRoute({
+  children,
+  allowedRoles,
+}: {
+  children: React.ReactNode;
+  allowedRoles: string[];
+}) {
+  const { isAuthenticated, user } = useAuth();
+  if (!isAuthenticated) {
+    return <Navigate to="/login" replace />;
+  }
+  if (!user || !allowedRoles.includes(user.role)) {
+    return <Navigate to="/reports" replace />;
+  }
+  return <>{children}</>;
+}
+
 export default function App() {
   return (
     <AuthProvider>
@@ -47,9 +64,9 @@ export default function App() {
           <Route
             path="/consultation/:reportId"
             element={
-              <ProtectedRoute>
+              <RoleProtectedRoute allowedRoles={["doctor", "admin"]}>
                 <Consultation />
-              </ProtectedRoute>
+              </RoleProtectedRoute>
             }
           />
 
