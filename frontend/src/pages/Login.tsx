@@ -32,7 +32,12 @@ export default function Login() {
         navigate("/");
       }
     } catch (err) {
-      setError("Invalid credentials. Please try again.");
+      const message = err instanceof Error ? err.message : "";
+      setError(
+        message === "Incorrect email or password"
+          ? "Invalid credentials. Please try again."
+          : "Unable to reach the backend. Check that it is running on port 8000."
+      );
     }
   };
 

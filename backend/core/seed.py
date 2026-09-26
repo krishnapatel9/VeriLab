@@ -51,15 +51,17 @@ def seed_synthetic_data(db: Session) -> None:
 
 
 def _ensure_user(db: Session, user_id, email: str, role: str) -> None:
-    if not db.query(User).filter(User.id == user_id).first():
-        db.add(User(
-            id=user_id,
-            tenant_id=SYNTH_TENANT_ID,
-            email=email,
-            hashed_password=get_password_hash(_DEV_PASSWORD),
-            role=role,
-            mfa_enabled=False,
-            status="active",
-        ))
-        db.flush()  # Flush each row individually to avoid bulk-insert UNIQUE violations
+    user = db.query(User).filter(User.id == user_id).first()
+    if user is None:
+        user = User(id=user_id)
+        db.add(user)
+
+    # Keep local synthetic accounts usable when an old dev database is reused.
+    user.tenant_id = SYNTH_TENANT_ID
+    user.email = email
+    user.hashed_password = get_password_hash(_DEV_PASSWORD)
+    user.role = role
+    user.mfa_enabled = False
+    user.status = "active"
+    db.flush()
 
