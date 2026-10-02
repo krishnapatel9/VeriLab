@@ -21,3 +21,11 @@ export async function uploadReport(file: File): Promise<UploadResponse> {
   );
   return response.data;
 }
+
+/** Fetch the immutable original as a blob (auth header required, so not a plain <a href>). */
+export async function getOriginalFile(reportId: string): Promise<Blob> {
+  const response = await apiClient.get(`/api/v1/intake/reports/${reportId}/file`, {
+    responseType: "blob",
+  });
+  return response.data;
+}

@@ -9,9 +9,15 @@ uuid7>=0.1.0
 python-multipart>=0.0.6
 python-dotenv>=1.0.0
 
-# Auth (stub for Phase 1, real JWT in Phase 2)
+# OCR (Tesseract binary + Poppler must also be installed on the OS)
+pytesseract>=0.3.10
+pillow>=10.0.0
+pdf2image>=1.17.0
+
+# Auth. bcrypt 4.1+ breaks passlib's backend detection.
 python-jose[cryptography]>=3.3.0
 passlib[bcrypt]>=1.7.4
+bcrypt>=4.0.1,<4.1
 
 # Testing
 pytest>=7.4.0

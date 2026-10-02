@@ -1,10 +1,18 @@
+import logging
+import os
+import re
 from abc import ABC, abstractmethod
 from typing import List, Dict, Any
 import uuid
 import asyncio
+import pytesseract
+from PIL import Image
+from pdf2image import convert_from_path
 from sqlalchemy.orm import Session
 from db.models.core_models import Report, Result, ReviewItem, generate_uuidv7
 from constants import PHASE1_VALUE_CONFIDENCE_REVIEW_BELOW, settings
+
+logger = logging.getLogger(__name__)
 
 
 class OCRProvider(ABC):
@@ -17,14 +25,10 @@ class OCRProvider(ABC):
         pass
 
 
-import pytesseract
-from pdf2image import convert_from_path
-import os
-
 class MockOCRProvider(OCRProvider):
     """
-    Simulates a managed OCR provider by returning a realistic JSON payload
-    with bounding boxes and confidence scores after a short delay.
+    DEMO ONLY. Returns the same fixed payload for every upload, regardless of the
+    file's contents. Never use it with anything but synthetic data.
     """
     async def extract_data(self, file_path: str) -> Dict[str, Any]:
         await asyncio.sleep(2)  # Simulate network latency
@@ -58,62 +62,61 @@ class MockOCRProvider(OCRProvider):
         }
 
 
+# "Name  value  unit  low - high  [flag]" on one line, e.g. "Hemoglobin 12.5 g/dL 12.0 - 15.5 L".
+# ponytail: single-line layouts only; add table-aware parsing when real report samples exist.
+_LINE = re.compile(
+    r"^(?P<name>[A-Za-z][A-Za-z0-9 ()/%.,-]*?)\s+"
+    r"(?P<value>[<>]?\s?-?\d+(?:\.\d+)?)\s*"
+    r"(?P<unit>[A-Za-z%µμ][A-Za-z0-9%/µμ^.*-]*(?:/[A-Za-z0-9]+)?)?\s*"
+    r"(?P<range>\d+(?:\.\d+)?\s*-\s*\d+(?:\.\d+)?)?\s*"
+    r"(?P<flag>High|Low|Normal|Critical|H|L|\*{1,2})?$"
+)
+
+
 class TesseractOCRProvider(OCRProvider):
     """
-    Real OCR implementation using Tesseract.
-    Parses lab reports from mock_storage. Gracefully falls back to MockOCRProvider
-    if OS-level Tesseract or Poppler binaries are not installed.
+    Real OCR via Tesseract. Needs the Tesseract binary (and Poppler for PDFs).
+    Values are the printed text, verbatim. Confidence is Tesseract's own mean
+    word confidence for the line. Any failure raises: the report goes to
+    'error' rather than showing invented results.
     """
     async def extract_data(self, file_path: str) -> Dict[str, Any]:
         real_path = os.path.join("mock_storage", file_path)
-        
         if not os.path.exists(real_path):
-            print(f"File not found at {real_path}, falling back to mock.")
-            return await MockOCRProvider().extract_data(file_path)
-            
-        try:
-            if real_path.lower().endswith(".pdf"):
-                images = convert_from_path(real_path)
-                text = ""
-                for img in images:
-                    text += pytesseract.image_to_string(img)
-            else:
-                text = pytesseract.image_to_string(real_path)
-                
-            print(f"Tesseract successfully extracted {len(text)} characters.")
-            # For the MVP, since we don't have a robust NLP parser yet, 
-            # we demonstrate the integration but return a structural payload 
-            # as if we parsed the raw `text` using regex.
-            return {
-                "patient_info": {
-                    "name": "Extracted Patient (Tesseract)",
-                    "patient_id": "MRN-999",
-                    "collection_date": "2026-10-02"
-                },
-                "results": [
-                    {
-                        "test_name": "WBC (Real OCR)",
-                        "value": "7.5",
-                        "unit": "x10^3/uL",
-                        "reference_range": "4.5 - 11.0",
-                        "flag": "Normal",
-                        "confidence": 0.95,
-                        "bounding_box": {"x1": 50, "y1": 150, "x2": 200, "y2": 160}
-                    },
-                    {
-                        "test_name": "Glucose (Real OCR)",
-                        "value": "125",
-                        "unit": "mg/dL",
-                        "reference_range": "70 - 99",
-                        "flag": "High",
-                        "confidence": 0.92,
-                        "bounding_box": {"x1": 50, "y1": 170, "x2": 200, "y2": 180}
-                    }
-                ]
-            }
-        except Exception as e:
-            print(f"Tesseract extraction failed ({e}), falling back to mock provider...")
-            return await MockOCRProvider().extract_data(file_path)
+            raise FileNotFoundError(f"Stored file missing for {file_path}")
+
+        images = convert_from_path(real_path) if real_path.lower().endswith(".pdf")             else [Image.open(real_path)]
+
+        results: List[Dict[str, Any]] = []
+        for page_no, img in enumerate(images, start=1):
+            d = pytesseract.image_to_data(img, output_type=pytesseract.Output.DICT)
+            lines: Dict[tuple, list] = {}
+            for i, word in enumerate(d["text"]):
+                if word.strip() and float(d["conf"][i]) >= 0:
+                    lines.setdefault((d["block_num"][i], d["par_num"][i], d["line_num"][i]), []).append(i)
+            for idxs in lines.values():
+                text = " ".join(d["text"][i] for i in idxs)
+                m = _LINE.match(text.strip())
+                if not m:
+                    continue
+                x1 = min(d["left"][i] for i in idxs)
+                y1 = min(d["top"][i] for i in idxs)
+                x2 = max(d["left"][i] + d["width"][i] for i in idxs)
+                y2 = max(d["top"][i] + d["height"][i] for i in idxs)
+                results.append({
+                    "test_name": m["name"].strip(),
+                    "value": m["value"].replace(" ", ""),
+                    "unit": m["unit"],
+                    "reference_range": m["range"],
+                    "flag": m["flag"],
+                    "confidence": round(sum(float(d["conf"][i]) for i in idxs) / len(idxs) / 100, 2),
+                    "bounding_box": {"x1": x1, "y1": y1, "x2": x2, "y2": y2},
+                    "page": page_no,
+                })
+
+        logger.info("Tesseract extracted %d result lines", len(results))
+        # Patient identity is deliberately NOT guessed here (Invariant 3): matching is a separate, human-gated step.
+        return {"patient_info": {}, "results": results}
 
 
 class OCRService:
@@ -133,7 +136,7 @@ class OCRService:
         """
         report = self.db.query(Report).filter(Report.id == report_id).first()
         if not report:
-            print(f"Report {report_id} not found for OCR processing.")
+            logger.warning("Report %s not found for OCR processing", report_id)
             return
 
         # 1. Update status to processing
@@ -161,9 +164,9 @@ class OCRService:
                     report_id=report.id,
                     test_name_raw=item["test_name"],
                     value_raw=item["value"],
-                    unit_raw=item["unit"],
-                    reference_range_raw=item["reference_range"],
-                    flag_raw=item["flag"],
+                    unit_raw=item.get("unit"),
+                    reference_range_raw=item.get("reference_range"),
+                    flag_raw=item.get("flag"),
                     is_critical=is_critical_flag,
 
                     # Distribute confidence score across all fields
@@ -173,7 +176,7 @@ class OCRService:
                     confidence_reference_range=confidence,
 
                     # Map bounding box to source fields
-                    source_page=1,
+                    source_page=item.get("page", 1),
                     source_x=item["bounding_box"]["x1"],
                     source_y=item["bounding_box"]["y1"],
                     source_width=item["bounding_box"]["x2"] - item["bounding_box"]["x1"],
@@ -204,11 +207,11 @@ class OCRService:
             # 4. Mark report as processed
             report.status = 'processed'
             self.db.commit()
-            print(f"Successfully processed OCR for report {report_id}")
+            logger.info("Processed OCR for report %s", report_id)
 
-        except Exception as e:
+        except Exception:
             self.db.rollback()
             report.status = 'error'
             self.db.commit()
-            print(f"OCR processing failed for report {report_id}: {e}")
+            logger.exception("OCR processing failed for report %s", report_id)
 

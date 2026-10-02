@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useEffect, ReactNode } from "react";
+import { createContext, useContext, useState, useEffect, useMemo, ReactNode } from "react";
 import { jwtDecode } from "jwt-decode";
 import { apiClient } from "../api/client";
 
@@ -20,22 +20,26 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [token, setToken] = useState<string | null>(localStorage.getItem("verilab_token"));
-  const [user, setUser] = useState<User | null>(null);
 
-  useEffect(() => {
-    if (token) {
-      try {
-        const decoded = jwtDecode<User>(token);
-        setUser(decoded);
-        apiClient.defaults.headers.common["Authorization"] = `Bearer ${token}`;
-      } catch (err) {
-        logout();
-      }
-    } else {
-      setUser(null);
-      delete apiClient.defaults.headers.common["Authorization"];
+  // Derived synchronously from the token, so a navigate() right after login() already sees the user.
+  const user = useMemo<User | null>(() => {
+    if (!token) return null;
+    try {
+      const decoded = jwtDecode<User & { exp?: number }>(token);
+      return decoded.exp && decoded.exp * 1000 < Date.now() ? null : decoded;
+    } catch {
+      return null;
     }
   }, [token]);
+
+  useEffect(() => {
+    if (token && !user) {
+      localStorage.removeItem("verilab_token");
+      setToken(null);
+    }
+    if (token && user) apiClient.defaults.headers.common["Authorization"] = `Bearer ${token}`;
+    else delete apiClient.defaults.headers.common["Authorization"];
+  }, [token, user]);
 
   const login = (newToken: string) => {
     localStorage.setItem("verilab_token", newToken);
@@ -45,7 +49,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const logout = () => {
     localStorage.removeItem("verilab_token");
     setToken(null);
-    setUser(null);
   };
 
   return (

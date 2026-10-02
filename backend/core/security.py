@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional, Any, Union
 from jose import jwt
 from passlib.context import CryptContext
@@ -16,9 +16,9 @@ def create_access_token(
     subject: Union[str, Any], role: str, tenant_id: str, expires_delta: Optional[timedelta] = None
 ) -> str:
     if expires_delta:
-        expire = datetime.utcnow() + expires_delta
+        expire = datetime.now(timezone.utc) + expires_delta
     else:
-        expire = datetime.utcnow() + timedelta(
+        expire = datetime.now(timezone.utc) + timedelta(
             minutes=settings.access_token_expire_minutes
         )
     to_encode = {"exp": expire, "sub": str(subject), "role": role, "tenant_id": str(tenant_id)}

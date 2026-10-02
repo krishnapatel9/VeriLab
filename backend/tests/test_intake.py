@@ -84,7 +84,15 @@ class TestUploadValidation:
     def test_png_file_accepted(self, client, uploader_headers):
         resp = client.post(
             UPLOAD_URL,
-            files={"file": ("scan.png", io.BytesIO(b"\x89PNG\r\n"), "image/png")},
+            files={"file": ("scan.png", io.BytesIO(b"\x89PNG\r\n\x1a\n"), "image/png")},
             headers=uploader_headers,
         )
         assert resp.status_code == 200
+
+    def test_extension_spoofing_rejected(self, client, uploader_headers):
+        resp = client.post(
+            UPLOAD_URL,
+            files={"file": ("report.pdf", io.BytesIO(b"MZ not a pdf"), "application/pdf")},
+            headers=uploader_headers,
+        )
+        assert resp.status_code == 400

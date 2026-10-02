@@ -63,7 +63,6 @@ class IntakeService:
         )
         
         db.add(new_report)
-        db.commit()
-        db.refresh(new_report)
+        db.flush()  # caller commits together with the audit event
         
         return new_report

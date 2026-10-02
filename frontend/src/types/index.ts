@@ -88,7 +88,11 @@ export interface CorrectResultRequest {
 export interface ConsultationResultItem {
   id: string;
   test_name_raw: string;
+  /** Effective value: the latest reviewer correction, else the OCR text. */
   value_raw: string;
+  /** Untouched OCR text. */
+  original_value_raw: string;
+  is_corrected: boolean;
   unit_raw: string | null;
   reference_range_raw: string | null;
   flag_raw: string | null;
@@ -108,4 +112,5 @@ export interface ConsultationResponse {
   consultation_type: string;
   selected_results: ConsultationResultItem[];
   additional_results: ConsultationResultItem[];
+  pending_count: number;
 }

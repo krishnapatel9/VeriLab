@@ -82,6 +82,9 @@ def verify_result(
     if not result:
         raise HTTPException(status_code=404, detail="Result not found")
 
+    if result.verification_status in ("verified_as_reported", "verified_with_correction"):
+        raise HTTPException(status_code=409, detail="Result is already verified")
+
     prev_status = result.verification_status
     result.verification_status = "verified_as_reported"
 
@@ -100,9 +103,7 @@ def verify_result(
         item.status = "resolved"
         item.resolved_at = now
 
-    db.commit()
-
-    # Audit
+    # Audit in the same transaction as the state change.
     emit_audit_event(
         db=db,
         event_type="result.verified",
@@ -117,7 +118,7 @@ def verify_result(
         actor_user_id=current_user.id,
         tenant_id=current_user.tenant_id,
     )
-    db.commit()  # Persist the audit event
+    db.commit()
 
     return {"status": "success", "verification_status": result.verification_status}
 
@@ -136,6 +137,9 @@ def correct_result(
     )
     if not result:
         raise HTTPException(status_code=404, detail="Result not found")
+
+    if result.verification_status in ("verified_as_reported", "verified_with_correction"):
+        raise HTTPException(status_code=409, detail="Result is already verified")
 
     prev_value = result.value_raw
     prev_status = result.verification_status
@@ -169,9 +173,7 @@ def correct_result(
         item.status = "resolved"
         item.resolved_at = now
 
-    db.commit()
-
-    # Audit
+    # Audit in the same transaction as the state change.
     emit_audit_event(
         db=db,
         event_type="result.corrected",
@@ -189,7 +191,7 @@ def correct_result(
         actor_user_id=current_user.id,
         tenant_id=current_user.tenant_id,
     )
-    db.commit()  # Persist the audit event
+    db.commit()
 
     return {"status": "success", "verification_status": result.verification_status}
 

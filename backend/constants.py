@@ -28,7 +28,7 @@ class Settings(BaseSettings):
     # Security — MUST be changed for staging/production
     secret_key: str = "dev_only_insecure_secret_key_change_before_staging"
     algorithm: str = "HS256"
-    access_token_expire_minutes: int = 60 * 24 * 7  # 1 week
+    access_token_expire_minutes: int = 60 * 8  # one clinical shift
 
     # CORS — comma-separated origins
     allowed_origins: str = (
@@ -54,6 +54,11 @@ class Settings(BaseSettings):
 
 # Module-level singleton — import settings from here, not re-instantiate
 settings = Settings()
+
+# Refuse to boot outside development with the well-known default signing key:
+# anyone could forge an admin token.
+if settings.environment != "development" and settings.secret_key == Settings.model_fields["secret_key"].default:
+    raise RuntimeError("SECRET_KEY must be set when ENVIRONMENT is not 'development'")
 
 # ---------------------------------------------------------------------------
 # Stable synthetic IDs (Phase 1 only — replaced by real auth in Phase 2)

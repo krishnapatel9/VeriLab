@@ -1,70 +1,134 @@
-# VeriLab
+<div align="center">
 
-VeriLab is a safety-critical laboratory report intake and review system. It automates the extraction of patient data from uploaded lab reports (PDFs/Images) using OCR, maps the extracted data to patient records, and safely surfaces critical anomalies (like a dangerously low TSH or high Glucose) to the reviewing doctors.
+<img src="frontend/public/favicon.svg" width="56" alt="Verilab" />
 
-The platform is designed with strict Role-Based Access Control (RBAC) to ensure that only authorized personnel can upload, verify, or clinically consult on sensitive medical data.
+# Verilab
 
-## 🚀 Features
+**Lab reports, read by OCR, checked by a person, handed to the doctor with every value traced to its source.**
 
-*   **Automated OCR Extraction:** Uses Tesseract OCR to automatically read and parse lab reports into structured data.
-*   **Critical Result Detection:** Automatically flags abnormal results (e.g., High/Low) and routes them for immediate attention.
-*   **Role-Based Access Control (RBAC):** 
-    *   **Uploaders:** Can upload new lab reports.
-    *   **Reviewers:** Can verify OCR accuracy and correct misread values before a doctor sees them.
-    *   **Doctors:** Can view verified reports and conduct clinical consultations based on the extracted data.
-*   **Full Audit Trail:** (In Progress) Every action is logged in an append-only, tamper-evident audit log.
+<sub>Phase 1 prototype · synthetic data only · not for clinical use</sub>
 
-## 🛠 Tech Stack
+<br />
 
-*   **Frontend:** React 18, TypeScript, Vite, Tailwind CSS, React Router, Axios.
-*   **Backend:** Python, FastAPI, SQLAlchemy, Pydantic, PyTesseract.
-*   **Database:** SQLite (Development) / PostgreSQL (Staging/Production).
+<img src="Docs/screenshots/04-review.png" alt="Verilab review screen: the original document beside the extracted values" width="900" />
 
-## 💻 Getting Started (Local Development)
+</div>
 
-### 1. Backend Setup
+<br />
 
-Open a terminal in the `backend` folder:
+## What it is
+
+Verilab is a lab-report intake and review system. An uploader sends in a PDF or photo of a lab report. OCR extracts the values. A **reviewer** checks each one against the original and corrects misreads. A **doctor** then reads a consultation view that shows every result together with how far it has been verified.
+
+The design rule behind all of it: **a plausible-looking wrong number is worse than a slow correct one.** So the system never hides uncertainty, never overwrites what OCR read, and never drops a flagged result.
+
+## Three roles
+
+Sign in by choosing who you are. Each role sees only what it needs.
+
+| Role | Does | Lands on |
+|---|---|---|
+| **Uploader** | Uploads lab reports and tracks them | Upload |
+| **Reviewer** | Checks extracted values against the original, corrects misreads | Review queue |
+| **Doctor** | Reads the consultation view, with each result's verification status | Reports |
+
+<div align="center">
+<img src="Docs/screenshots/01-login.png" alt="Sign-in with a three-role picker" width="860" />
+</div>
+
+## Tour
+
+<table>
+<tr>
+<td width="50%"><img src="Docs/screenshots/02-upload.png" alt="Upload" /><br /><sub><b>Upload.</b> The original is SHA-256 hashed and stored untouched.</sub></td>
+<td width="50%"><img src="Docs/screenshots/03-review-queue.png" alt="Review queue" /><br /><sub><b>Review queue.</b> Live status while OCR runs.</sub></td>
+</tr>
+<tr>
+<td width="50%"><img src="Docs/screenshots/04-review.png" alt="Review" /><br /><sub><b>Review.</b> Original on the left, extracted values on the right.</sub></td>
+<td width="50%"><img src="Docs/screenshots/05-consultation.png" alt="Consultation" /><br /><sub><b>Consultation.</b> Corrected values, pending results and flags, all visible.</sub></td>
+</tr>
+</table>
+
+## Safety rules it enforces
+
+These come from [`Docs/product/SAFETY-INVARIANTS.md`](Docs/product/SAFETY-INVARIANTS.md). The ones below are implemented and covered by tests:
+
+- **Corrections are additive.** A correction is a new row. The OCR text is never overwritten, and the doctor sees the corrected value with the original beside it.
+- **Uncertainty is never hidden.** Unverified results are shown to the doctor with a badge. Status is always text plus icon, never colour alone.
+- **Flagged results always surface.** A result with a printed abnormal flag appears in the doctor's view whether or not it is on the consultation's test list, and whether or not it is verified yet.
+- **Tamper-evident audit log.** Events are hash-chained over every field and written in the same transaction as the change. `verify_chain()` detects edits to history.
+- **Tenant isolation.** Every query is tenant-scoped, with cross-tenant tests.
+- **Originals are viewable, and every view is audited.**
+
+## Quick start
+
+**Requirements:** Python 3.12+, Node 18+.
 
 ```bash
+# Backend: http://127.0.0.1:8000  (API docs at /docs)
 cd backend
-
-# Create and activate a virtual environment
 python -m venv venv
-.\venv\Scripts\activate  # Windows
-
-# Install dependencies
+venv\Scripts\activate            # macOS/Linux: source venv/bin/activate
 pip install -r requirements.txt
-
-# Start the server (FastAPI will run on http://127.0.0.1:8000)
 python -m uvicorn main:app --reload --host 127.0.0.1 --port 8000
-```
-*Note: The backend seed script automatically creates a development database (`verilab_dev.db`) on the first run.*
 
-### 2. Frontend Setup
-
-Open a new terminal in the `frontend` folder:
-
-```bash
+# Frontend: http://localhost:5173  (new terminal)
 cd frontend
-
-# Install dependencies
 npm install
-
-# Start the development server (Vite will run on http://localhost:5173)
 npm run dev
 ```
 
-### 3. Usage & Test Credentials
+The first run creates and seeds a SQLite database. Open the app, pick a role, and sign in. The demo password is shown on the sign-in page in development builds.
 
-Navigate to `http://localhost:5173` in your browser. The database is pre-seeded with synthetic test users. You can log in with any of the following accounts (Password for all: `dev123`):
+### OCR
 
-*   **Uploader:** `uploader@synth.verilab` (Uploads new PDFs)
-*   **Reviewer:** `reviewer@synth.verilab` (Verifies OCR results)
-*   **Doctor:** `doctor@synth.verilab` (Views the final consultation)
+By default Verilab runs with `OCR_PROVIDER=mock`, which returns the **same fixed demo results for every upload**. It exists to demo the review flow, not to read your files.
 
-### Troubleshooting
+For real extraction set `OCR_PROVIDER=tesseract` and install the [Tesseract](https://github.com/tesseract-ocr/tesseract) binary (plus [Poppler](https://poppler.freedesktop.org/) for PDFs). The Tesseract provider reads single-line result rows (`Name value unit range flag`) and uses Tesseract's own confidence. It never invents values. On failure the report goes to `error`.
 
-If the login page reports invalid credentials for every account, verify that the backend is running at `http://127.0.0.1:8000`. The frontend and backend are separate processes, so both terminals must remain open.
+### Tests
 
-For a teammate connecting to a backend running on another computer, set `VITE_API_BASE_URL` in `frontend/.env.local` to the backend computer's reachable address, for example `http://192.168.1.20:8000`, and add the frontend origin to `ALLOWED_ORIGINS` in the backend environment. Restart Vite after changing frontend environment variables.
+```bash
+cd backend
+TESTING=1 python -m pytest        # PowerShell: $env:TESTING=1; python -m pytest
+```
+
+### Configuration
+
+| Variable | Default | Notes |
+|---|---|---|
+| `DATABASE_URL` | `sqlite:///./verilab_dev.db` | PostgreSQL for staging and production |
+| `SECRET_KEY` | dev-only key | **Required** when `ENVIRONMENT` is not `development`. The app refuses to start without it |
+| `ENVIRONMENT` | `development` | |
+| `OCR_PROVIDER` | `mock` | `mock` or `tesseract` |
+| `ALLOWED_ORIGINS` | localhost:5173/5174 | Comma-separated |
+| `VITE_API_BASE_URL` | `http://127.0.0.1:8000` | Frontend → backend address |
+
+## Tech
+
+**Frontend:** React 18, TypeScript, Vite, Tailwind CSS. **Backend:** FastAPI, SQLAlchemy 2, Pydantic v2, JWT auth. **Data:** SQLite in development, PostgreSQL planned. **OCR:** Tesseract behind an `OCRProvider` interface, so a managed provider can replace it.
+
+```
+backend/   FastAPI app: routers, services (intake, OCR), models, audit, tests
+frontend/  React app: role-aware shell, review and consultation views
+Docs/      PRD, TRD, schema, safety invariants, traceability matrix
+AUDIT.md   Candid engineering audit and fix order
+```
+
+## Status
+
+Phase 1 vertical slice: upload → OCR → review → correct → consultation → audit. Still to come:
+
+- [ ] Patient matching (never on name alone)
+- [ ] Clickable bounding-box overlay on the original
+- [ ] PostgreSQL with Row-Level Security
+- [ ] MFA for clinical roles
+- [ ] Rules service for consultation test lists and clinician-approved critical definitions
+- [ ] Managed, India-region OCR provider
+- [ ] CI
+
+See [`AUDIT.md`](AUDIT.md) for the full list of known gaps.
+
+## Disclaimer
+
+Verilab is a prototype. It is **not a medical device**, it gives no diagnostic or treatment advice, and it must not be used with real patient data.

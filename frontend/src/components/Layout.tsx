@@ -1,74 +1,68 @@
-import { Outlet, useNavigate, useLocation } from "react-router-dom";
-import { LogOut, LayoutDashboard, Upload } from "lucide-react";
+import { NavLink, Outlet, useNavigate } from "react-router-dom";
+import { LogOut, LayoutList, Upload } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
+import { ROLES, isRoleKey } from "../roles";
+import { Wordmark } from "./Brand";
 
 export default function Layout() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
-  const location = useLocation();
+  const role = user && isRoleKey(user.role) ? ROLES[user.role] : null;
 
-  const handleLogout = () => {
-    logout();
-    navigate("/login");
-  };
-
-  const navItems = [];
-  if (user?.role === "uploader" || user?.role === "admin") {
-    navItems.push({ label: "Upload", path: "/", icon: Upload });
-  }
-  if (user?.role === "reviewer" || user?.role === "doctor" || user?.role === "admin") {
-    navItems.push({ label: "Reports", path: "/reports", icon: LayoutDashboard });
-  }
+  const nav = [
+    ...(user?.role === "uploader" || user?.role === "admin" ? [{ label: "Upload", to: "/", icon: Upload, end: true }] : []),
+    { label: "Reports", to: "/reports", icon: LayoutList, end: false },
+  ];
 
   return (
-    <div className="min-h-screen bg-slate-50 flex flex-col">
-      {/* Global Header */}
-      <header className="bg-white border-b border-slate-200 sticky top-0 z-10">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between h-16">
-            <div className="flex">
-              <div className="flex-shrink-0 flex items-center">
-                <span className="text-xl font-bold text-slate-900 tracking-tight">Verilab</span>
-                <span className="ml-2 px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800 uppercase tracking-wide">
-                  {user?.role}
+    <div className="flex min-h-screen flex-col">
+      <header className="sticky top-0 z-20 border-b border-line bg-paper/85 backdrop-blur">
+        <div className="mx-auto flex h-16 max-w-[1400px] items-center justify-between px-6">
+          <div className="flex items-center gap-10">
+            <button onClick={() => navigate(role?.home ?? "/")} aria-label="Home">
+              <Wordmark />
+            </button>
+            <nav className="flex items-center gap-1">
+              {nav.map(({ label, to, icon: Icon, end }) => (
+                <NavLink
+                  key={to}
+                  to={to}
+                  end={end}
+                  className={({ isActive }) =>
+                    `inline-flex items-center gap-2 rounded-lg px-3 py-1.5 text-sm font-medium transition ${
+                      isActive ? "bg-ink text-white" : "text-ink-2 hover:bg-line/60 hover:text-ink"
+                    }`
+                  }
+                >
+                  <Icon className="h-4 w-4" /> {label}
+                </NavLink>
+              ))}
+            </nav>
+          </div>
+          <div className="flex items-center gap-3">
+            {role && (
+              <span className="inline-flex items-center gap-2 rounded-full border border-line bg-surface py-1 pl-1.5 pr-3 text-sm shadow-card">
+                <span className="grid h-6 w-6 place-items-center rounded-full bg-brand text-white">
+                  <role.Icon className="h-3.5 w-3.5" />
                 </span>
-              </div>
-              <nav className="hidden sm:ml-8 sm:flex sm:space-x-8">
-                {navItems.map((item) => {
-                  const isActive = location.pathname === item.path || (item.path !== "/" && location.pathname.startsWith(item.path));
-                  const Icon = item.icon;
-                  return (
-                    <button
-                      key={item.path}
-                      onClick={() => navigate(item.path)}
-                      className={`inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium ${
-                        isActive
-                          ? "border-blue-500 text-slate-900"
-                          : "border-transparent text-slate-500 hover:border-slate-300 hover:text-slate-700"
-                      }`}
-                    >
-                      <Icon className="w-4 h-4 mr-2" />
-                      {item.label}
-                    </button>
-                  );
-                })}
-              </nav>
-            </div>
-            <div className="flex items-center">
-              <button
-                onClick={handleLogout}
-                className="inline-flex items-center gap-2 px-3 py-2 border border-transparent text-sm font-medium rounded-md text-slate-500 hover:text-slate-700 hover:bg-slate-50"
-              >
-                <LogOut className="w-4 h-4" />
-                Sign Out
-              </button>
-            </div>
+                <span className="font-medium">{role.label}</span>
+              </span>
+            )}
+            <button
+              onClick={() => {
+                logout();
+                navigate("/login");
+              }}
+              className="btn-quiet !border-transparent !bg-transparent !px-2.5 text-ink-2 hover:!bg-line/60"
+              aria-label="Sign out"
+              title="Sign out"
+            >
+              <LogOut className="h-4 w-4" />
+            </button>
           </div>
         </div>
       </header>
-
-      {/* Main Content Area */}
-      <main className="flex-1 w-full max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
+      <main className="mx-auto w-full max-w-[1400px] flex-1 px-6 py-10">
         <Outlet />
       </main>
     </div>

@@ -5,11 +5,12 @@ Sprint 4 (Phase 1): applies the hard-coded PHASE1_SELECTED_TEST_NAMES filter.
 Sprint 7 (Phase 2): will replace this with the Rules Service query.
 
 Key invariants enforced here:
-- Only verified results appear in selected_results (FR-24 safety rule).
-- All other extracted results are returned in additional_results and MUST be
-  disclosed to the client (FR-27).
-- Critical results are ALWAYS included in selected_results regardless of
-  the test-name filter (FR-33 / critical-flag surfacing gate).
+- Every extracted result is returned with its verification_status; nothing is
+  hidden because it is unverified (Invariants 5 and 6). The UI must badge
+  unverified rows.
+- The effective value is the latest correction, with the OCR original alongside.
+- Flagged/critical results are ALWAYS included in selected_results regardless of
+  the test-name filter or verification state (FR-32).
 """
 
 from __future__ import annotations
@@ -21,7 +22,7 @@ from sqlalchemy.orm import Session
 
 from api.dependencies import get_db, require_role
 from core.audit import emit_audit_event
-from db.models.core_models import Report, Result, User
+from db.models.core_models import Report, Result, ResultCorrection, User
 from schemas.consultation import ConsultationResponse, ConsultationResultItem
 from constants import (
     PHASE1_SELECTED_TEST_NAMES,
@@ -61,16 +62,28 @@ def get_consultation_view(
     if not report:
         raise HTTPException(status_code=404, detail="Report not found")
 
-    # Only include results that have been verified
     all_results = (
         db.query(Result)
         .filter(
             Result.report_id == report_id,
             Result.tenant_id == current_user.tenant_id,
-            Result.verification_status.in_(_VERIFIED_STATUSES),
         )
         .all()
     )
+
+    # Latest correction per result (corrections are append-only; newest wins).
+    latest_correction: dict[uuid.UUID, ResultCorrection] = {}
+    if all_results:
+        corrections = (
+            db.query(ResultCorrection)
+            .filter(ResultCorrection.result_id.in_([r.id for r in all_results]))
+            .order_by(ResultCorrection.created_at.asc())
+            .all()
+        )
+        for c in corrections:
+            latest_correction[c.result_id] = c
+
+    pending_count = sum(1 for r in all_results if r.verification_status not in _VERIFIED_STATUSES)
 
     # Partition into selected vs. additional (FR-24, FR-27)
     selected: list[Result] = []
@@ -81,7 +94,7 @@ def get_consultation_view(
         is_in_consultation = any(
             name.lower() == sel.lower() for sel in PHASE1_SELECTED_TEST_NAMES
         )
-        # Critical results always appear in selected regardless of filter (FR-33)
+        # Flagged results always appear in selected regardless of filter (FR-32)
         if is_in_consultation or r.is_critical:
             selected.append(r)
         else:
@@ -98,6 +111,7 @@ def get_consultation_view(
             "consultation_type": PHASE1_CONSULTATION_TYPE_NAME,
             "selected_count": len(selected),
             "additional_count": len(additional),
+            "pending_count": pending_count,
         },
         actor_user_id=current_user.id,
         tenant_id=current_user.tenant_id,
@@ -105,10 +119,13 @@ def get_consultation_view(
     db.commit()  # Persist the audit event
 
     def _to_schema(r: Result) -> ConsultationResultItem:
+        corr = latest_correction.get(r.id)
         return ConsultationResultItem(
             id=r.id,
             test_name_raw=r.test_name_raw or "",
-            value_raw=r.value_raw or "",
+            value_raw=corr.corrected_value_raw if corr else (r.value_raw or ""),
+            original_value_raw=r.value_raw or "",
+            is_corrected=corr is not None,
             unit_raw=r.unit_raw,
             reference_range_raw=r.reference_range_raw,
             flag_raw=r.flag_raw,
@@ -128,4 +145,5 @@ def get_consultation_view(
         consultation_type=PHASE1_CONSULTATION_TYPE_NAME,
         selected_results=[_to_schema(r) for r in selected],
         additional_results=[_to_schema(r) for r in additional],
+        pending_count=pending_count,
     )

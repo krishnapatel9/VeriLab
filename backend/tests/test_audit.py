@@ -13,7 +13,7 @@ import uuid
 import pytest
 
 from db.models.core_models import AuditEvent
-from core.audit import emit_audit_event, _compute_event_hash
+from core.audit import emit_audit_event, _compute_event_hash, verify_chain
 from constants import SYNTH_TENANT_ID, SYNTH_UPLOADER_ID, SYNTH_REVIEWER_ID
 
 
@@ -65,12 +65,20 @@ class TestAuditHashChain:
         )
 
         expected = _compute_event_hash(
-            event.prev_event_hash,
-            event.event_type,
-            resource_id,
-            event.created_at.isoformat(),
+            event.prev_event_hash, event.event_type, event.resource_type, resource_id,
+            event.actor_user_id, event.tenant_id, event.metadata_json, event.created_at,
         )
         assert event.event_hash == expected
+
+    def test_verify_chain_detects_tampering(self, db):
+        emit_audit_event(db=db, event_type="test.a", resource_type="test", resource_id=uuid.uuid4(),
+                         metadata={"v": "12.5"}, tenant_id=SYNTH_TENANT_ID)
+        assert verify_chain(db, SYNTH_TENANT_ID)
+        ev = db.query(AuditEvent).filter(AuditEvent.event_type == "test.a").first()
+        ev.metadata_json = {"v": "2.5"}  # edit history
+        db.flush()
+        assert not verify_chain(db, SYNTH_TENANT_ID)
+        db.rollback()
 
     def test_three_event_chain_is_intact(self, db):
         events = []

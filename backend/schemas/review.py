@@ -1,4 +1,4 @@
-from pydantic import BaseModel, ConfigDict, UUID4
+from pydantic import BaseModel, ConfigDict, Field, UUID4
 from typing import List, Optional
 from datetime import datetime
 
@@ -49,6 +49,6 @@ class VerifyResultRequest(BaseModel):
 
 class CorrectResultRequest(BaseModel):
     reviewer_user_id: Optional[UUID4] = None
-    corrected_value_raw: str
-    reason: str
+    corrected_value_raw: str = Field(min_length=1, max_length=200)
+    reason: str = Field(min_length=1, max_length=200)
     comment: Optional[str] = None

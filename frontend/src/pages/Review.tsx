@@ -1,286 +1,190 @@
-import { useEffect, useState } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
-import { AlertTriangle, CheckCircle, ArrowLeft, X, LogOut } from 'lucide-react';
-import { useAuth } from '../context/AuthContext';
-import { getReportForReview, verifyResult, correctResult } from '../api/review';
-import type { ReportReviewResponse, ResultItem } from '../types';
+import { useEffect, useState } from "react";
+import { useParams, useNavigate } from "react-router-dom";
+import { ArrowLeft, X, Loader2, Flag, FileWarning } from "lucide-react";
+import { getReportForReview, verifyResult, correctResult } from "../api/review";
+import { getOriginalFile } from "../api/intake";
+import { VerificationStatusBadge } from "../components/VerificationStatusBadge";
+import { ConfidenceBadge } from "../components/ConfidenceBadge";
+import type { ReportReviewResponse, ResultItem } from "../types";
+
+const REASONS = ["OCR misread", "Typo in original report", "Other"];
+const isDone = (s: string) => s === "verified_as_reported" || s === "verified_with_correction";
 
 export default function Review() {
   const { reportId } = useParams<{ reportId: string }>();
   const navigate = useNavigate();
-  const { user, logout } = useAuth();
 
-  const [reportData, setReportData] = useState<ReportReviewResponse | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [data, setData] = useState<ReportReviewResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [toast, setToast] = useState<string | null>(null);
+  const [busyId, setBusyId] = useState<string | null>(null);
 
-  // Correction Modal State
-  const [editingResult, setEditingResult] = useState<ResultItem | null>(null);
-  const [correctedValue, setCorrectedValue] = useState('');
-  const [correctionReason, setCorrectionReason] = useState('OCR misread');
+  const [editing, setEditing] = useState<ResultItem | null>(null);
+  const [value, setValue] = useState("");
+  const [reason, setReason] = useState(REASONS[0]);
 
-  const fetchReport = async () => {
+  // Original document (FR-29): fetched with auth, shown from a blob URL.
+  const [doc, setDoc] = useState<{ url: string; type: string } | null>(null);
+  const [docError, setDocError] = useState(false);
+
+  const load = async () => {
     if (!reportId) return;
     try {
-      const data = await getReportForReview(reportId);
-      setReportData(data);
-    } catch (err: any) {
-      setError(err.message);
-    } finally {
-      setLoading(false);
+      setData(await getReportForReview(reportId));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not load report");
     }
   };
+
+  useEffect(() => { load(); }, [reportId]);
 
   useEffect(() => {
-    fetchReport();
+    if (!reportId) return;
+    let url: string | null = null;
+    getOriginalFile(reportId)
+      .then((b) => { url = URL.createObjectURL(b); setDoc({ url, type: b.type }); })
+      .catch(() => setDocError(true));
+    return () => { if (url) URL.revokeObjectURL(url); };
   }, [reportId]);
 
-  const handleVerify = async (resultId: string) => {
-    try {
-      await verifyResult(resultId, {});
-      await fetchReport();
-    } catch (err: any) {
-      alert(err.message);
-    }
+  const fail = (e: unknown) => {
+    setToast(e instanceof Error ? e.message : "Something went wrong");
+    setTimeout(() => setToast(null), 4000);
   };
 
-  const handleCorrect = async () => {
-    if (!editingResult || !correctedValue) return;
-    try {
-      await correctResult(editingResult.id, {
-        corrected_value_raw: correctedValue,
-        reason: correctionReason,
-      });
-      setEditingResult(null);
-      await fetchReport();
-    } catch (err: any) {
-      alert(err.message);
-    }
+  const verify = async (id: string) => {
+    setBusyId(id);
+    try { await verifyResult(id, {}); await load(); } catch (e) { fail(e); } finally { setBusyId(null); }
   };
 
-  if (loading) return <div className="p-8 text-center text-slate-500">Loading report data…</div>;
-  if (error) return <div className="p-8 text-center text-red-500">Error: {error}</div>;
-  if (!reportData) return null;
+  const saveCorrection = async () => {
+    if (!editing || !value.trim()) return;
+    setBusyId(editing.id);
+    try {
+      await correctResult(editing.id, { corrected_value_raw: value.trim(), reason });
+      setEditing(null);
+      await load();
+    } catch (e) { fail(e); } finally { setBusyId(null); }
+  };
+
+  if (error) return <p role="alert" className="text-flag">{error}</p>;
+  if (!data) {
+    return <div className="grid gap-6 lg:grid-cols-2"><div className="skeleton h-[70vh]" /><div className="skeleton h-[70vh]" /></div>;
+  }
+
+  const total = data.results.length;
+  const done = data.results.filter((r) => isDone(r.verification_status)).length;
 
   return (
-    <div className="min-h-screen bg-slate-50 flex flex-col relative">
-      {/* Correction Modal */}
-      {editingResult && (
-        <div className="absolute inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4">
-          <div className="bg-white rounded-lg shadow-xl w-full max-w-md overflow-hidden">
-            <div className="px-6 py-4 border-b border-slate-200 flex justify-between items-center">
-              <h3 className="font-semibold text-slate-900">Correct Value</h3>
-              <button onClick={() => setEditingResult(null)} className="text-slate-400 hover:text-slate-700">
-                <X className="w-5 h-5" />
-              </button>
+    <div className="animate-rise">
+      {toast && <div role="alert" className="fixed bottom-6 left-1/2 z-50 -translate-x-1/2 rounded-lg bg-ink px-4 py-2.5 text-sm text-white shadow-lift">{toast}</div>}
+
+      <div className="flex flex-wrap items-end justify-between gap-4">
+        <div>
+          <button onClick={() => navigate("/reports")} className="mb-3 inline-flex items-center gap-1.5 text-sm text-ink-2 hover:text-ink"><ArrowLeft className="h-4 w-4" />Review queue</button>
+          <p className="eyebrow">Reviewing</p>
+          <h1 className="mt-1 font-display text-[30px] font-medium tracking-tight">Report <span className="num text-[26px]">{data.id.slice(0, 8)}</span></h1>
+        </div>
+        <div className="w-full max-w-xs">
+          <div className="flex justify-between text-sm"><span className="text-ink-2">Verified</span><span className="num font-medium">{done} / {total}</span></div>
+          <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-line"><div className="h-full rounded-full bg-brand transition-all duration-500" style={{ width: total ? `${(done / total) * 100}%` : 0 }} /></div>
+        </div>
+      </div>
+
+      <div className="mt-8 grid items-start gap-6 lg:grid-cols-2">
+        {/* Original document */}
+        <section className="card overflow-hidden lg:sticky lg:top-24">
+          <div className="flex items-center justify-between border-b border-line px-5 py-3">
+            <h2 className="text-sm font-semibold">Original document</h2>
+            <span className="num text-xs text-ink-3" title={data.file_hash}>sha256 {data.file_hash.slice(0, 10)}…</span>
+          </div>
+          <div className="h-[68vh] bg-paper">
+            {docError ? (
+              <div className="grid h-full place-items-center p-8 text-center text-sm text-ink-2"><div><FileWarning className="mx-auto mb-3 h-8 w-8 text-ink-3" strokeWidth={1.5} />The original could not be loaded.</div></div>
+            ) : !doc ? (
+              <div className="skeleton h-full rounded-none" />
+            ) : doc.type.startsWith("image/") ? (
+              <img src={doc.url} alt="Original lab report" className="h-full w-full object-contain" />
+            ) : (
+              <iframe src={doc.url} title="Original lab report" className="h-full w-full" />
+            )}
+          </div>
+        </section>
+
+        {/* Extracted results */}
+        <section className="space-y-4">
+          {data.results.length === 0 && <div className="card p-8 text-center text-sm text-ink-2">No results were extracted from this report.</div>}
+          {data.results.map((item) => {
+            const done = isDone(item.verification_status);
+            const busy = busyId === item.id;
+            return (
+              <article key={item.id} className={`card p-5 transition ${item.verification_status === "needs_review" ? "ring-2 ring-pending/30" : ""}`}>
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <h3 className="text-[15px] font-semibold">{item.test_name_raw}</h3>
+                    {item.is_critical && (
+                      <span className="mt-1.5 inline-flex items-center gap-1 rounded-full bg-flag-soft px-2 py-0.5 text-xs font-medium text-flag"><Flag className="h-3 w-3" />Flagged on report: {item.flag_raw}</span>
+                    )}
+                  </div>
+                  <VerificationStatusBadge status={item.verification_status} />
+                </div>
+
+                <div className="mt-4 flex items-baseline gap-2">
+                  <span className="num text-[28px] font-medium leading-none">{item.value_raw}</span>
+                  <span className="text-sm text-ink-2">{item.unit_raw}</span>
+                </div>
+
+                <dl className="mt-4 grid grid-cols-3 gap-4 border-t border-line pt-4 text-sm">
+                  <div><dt className="eyebrow">Reference</dt><dd className="num mt-1 text-ink-2">{item.reference_range_raw ?? "—"}</dd></div>
+                  <div><dt className="eyebrow">Confidence</dt><dd className="mt-1"><ConfidenceBadge value={item.confidence_value ?? 0} /></dd></div>
+                  <div><dt className="eyebrow">Source</dt><dd className="num mt-1 text-ink-2">p.{item.source_page} · {Math.round(item.source_x)},{Math.round(item.source_y)}</dd></div>
+                </dl>
+
+                {!done && (
+                  <div className="mt-5 flex justify-end gap-2">
+                    <button onClick={() => { setEditing(item); setValue(item.value_raw); setReason(REASONS[0]); }} className="btn-quiet">Correct</button>
+                    <button onClick={() => verify(item.id)} disabled={busy} className="btn-primary">
+                      {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : "Matches the original"}
+                    </button>
+                  </div>
+                )}
+              </article>
+            );
+          })}
+        </section>
+      </div>
+
+      {/* Correction dialog */}
+      {editing && (
+        <div className="fixed inset-0 z-40 grid place-items-center bg-ink/40 p-4 backdrop-blur-sm" onClick={() => setEditing(null)}>
+          <div role="dialog" aria-modal="true" aria-label="Correct value" className="card w-full max-w-md animate-rise shadow-lift" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between border-b border-line px-6 py-4">
+              <h3 className="font-display text-xl">Correct {editing.test_name_raw}</h3>
+              <button onClick={() => setEditing(null)} className="text-ink-3 hover:text-ink" aria-label="Close"><X className="h-5 w-5" /></button>
             </div>
-            <div className="p-6 space-y-4">
+            <div className="space-y-5 p-6">
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Test Name</label>
-                <div className="p-2 bg-slate-100 rounded text-slate-700 text-sm">{editingResult.test_name_raw}</div>
+                <p className="eyebrow">As read by OCR (kept on record)</p>
+                <p className="num mt-1.5 rounded-lg bg-paper px-3 py-2 text-sm text-ink-2 line-through decoration-flag/60">{editing.value_raw}</p>
               </div>
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Original OCR Value</label>
-                <div className="p-2 bg-red-50 text-red-700 rounded text-sm line-through">{editingResult.value_raw}</div>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Corrected Value</label>
-                <input
-                  type="text"
-                  value={correctedValue}
-                  onChange={(e) => setCorrectedValue(e.target.value)}
-                  className="w-full border border-slate-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  autoFocus
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Reason for change</label>
-                <select
-                  value={correctionReason}
-                  onChange={(e) => setCorrectionReason(e.target.value)}
-                  className="w-full border border-slate-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                >
-                  <option value="OCR misread">OCR misread</option>
-                  <option value="Typo in original report">Typo in original report</option>
-                  <option value="Other">Other</option>
+              <label className="block">
+                <span className="text-sm font-medium">Value on the original document</span>
+                <input value={value} onChange={(e) => setValue(e.target.value)} autoFocus className="num mt-1.5 w-full rounded-lg border border-line-strong px-3.5 py-2.5 text-sm focus:border-brand" />
+              </label>
+              <label className="block">
+                <span className="text-sm font-medium">Reason</span>
+                <select value={reason} onChange={(e) => setReason(e.target.value)} className="mt-1.5 w-full rounded-lg border border-line-strong bg-surface px-3.5 py-2.5 text-sm focus:border-brand">
+                  {REASONS.map((r) => <option key={r}>{r}</option>)}
                 </select>
-              </div>
+              </label>
             </div>
-            <div className="px-6 py-4 bg-slate-50 border-t border-slate-200 flex justify-end gap-3">
-              <button onClick={() => setEditingResult(null)} className="px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-200 rounded">
-                Cancel
-              </button>
-              <button onClick={handleCorrect} className="px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded">
-                Save Correction
-              </button>
+            <div className="flex justify-end gap-2 border-t border-line bg-paper/60 px-6 py-4">
+              <button onClick={() => setEditing(null)} className="btn-quiet">Cancel</button>
+              <button onClick={saveCorrection} disabled={!value.trim() || busyId === editing.id} className="btn-primary">Save correction</button>
             </div>
           </div>
         </div>
       )}
-
-      {/* Header */}
-      <header className="bg-white border-b border-slate-200 px-6 py-4 flex items-center justify-between">
-        <div className="flex items-center gap-4">
-          <button onClick={() => navigate('/')} className="text-slate-500 hover:text-slate-900">
-            <ArrowLeft className="w-5 h-5" />
-          </button>
-          <h1 className="text-xl font-semibold text-slate-900">Clinical Review</h1>
-        </div>
-        <div className="flex items-center gap-4">
-          <div className="flex items-center gap-2 text-sm text-slate-600">
-            <span>Status:</span>
-            <span className="px-2 py-1 bg-blue-100 text-blue-800 rounded-md font-medium capitalize">
-              {reportData.status}
-            </span>
-          </div>
-           {(user?.role === 'doctor' || user?.role === 'admin') && (
-             <button
-               onClick={() => navigate(`/consultation/${reportId}`)}
-               className="px-4 py-2 bg-slate-900 text-white text-sm font-medium rounded-md hover:bg-slate-800 transition-colors"
-             >
-               Go to Consultation
-             </button>
-           )}
-          <span className="text-sm text-slate-500">
-            {user?.role && (
-              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800 mr-2">
-                {user.role}
-              </span>
-            )}
-          </span>
-          <button onClick={logout} className="flex items-center gap-1 text-sm text-slate-500 hover:text-slate-900">
-            <LogOut className="w-4 h-4" />
-          </button>
-        </div>
-      </header>
-
-      <main className="flex-1 flex overflow-hidden">
-        {/* Left: Mock PDF Viewer */}
-        <div className="w-1/2 border-r border-slate-200 bg-slate-100 p-6 overflow-y-auto flex items-center justify-center">
-          <div className="bg-white w-full max-w-lg aspect-[8.5/11] shadow-md border border-slate-300 p-8 flex flex-col">
-            <h2 className="text-2xl font-bold mb-6 text-center border-b pb-4">LABORATORY REPORT</h2>
-            <div className="space-y-4 font-mono text-sm">
-              <p>Patient Name: Jane Doe</p>
-              <p>Collection Date: 2026-10-01</p>
-              <div className="mt-8 border-t pt-4">
-                <table className="w-full text-left">
-                  <thead>
-                    <tr className="border-b">
-                      <th className="py-2">Test</th>
-                      <th className="py-2">Result</th>
-                      <th className="py-2">Unit</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <tr className="border-b">
-                      <td className="py-2">Hemoglobin</td>
-                      <td className="py-2">12.5</td>
-                      <td className="py-2">g/dL</td>
-                    </tr>
-                    <tr className="border-b bg-yellow-50">
-                      <td className="py-2">TSH</td>
-                      <td className="py-2 font-bold text-red-600">&lt;0.01</td>
-                      <td className="py-2">uIU/mL</td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
-            </div>
-            <div className="mt-auto text-center text-slate-400 text-xs italic">(Mock PDF Renderer)</div>
-          </div>
-        </div>
-
-        {/* Right: Data Extraction & Review */}
-        <div className="w-1/2 bg-white p-6 overflow-y-auto">
-          <h2 className="text-lg font-semibold text-slate-900 mb-6">Extracted Data</h2>
-
-          <div className="space-y-4">
-            {reportData.results.map((item: ResultItem) => {
-              const isNeedsReview = item.verification_status === 'needs_review';
-              const isCorrected = item.verification_status === 'verified_with_correction';
-              const isVerified = item.verification_status === 'verified_as_reported';
-              const isActionable = !isVerified && !isCorrected;
-
-              return (
-                <div
-                  key={item.id}
-                  className={`p-4 rounded-lg border ${
-                    isNeedsReview ? 'border-yellow-300 bg-yellow-50' :
-                    isCorrected   ? 'border-blue-300 bg-blue-50' :
-                    isVerified    ? 'border-green-300 bg-green-50' :
-                    'border-slate-200 bg-white'
-                  }`}
-                >
-                  <div className="flex justify-between items-start mb-3">
-                    <h3 className="font-medium text-slate-900">{item.test_name_raw}</h3>
-                    {isNeedsReview && (
-                      <span className="flex items-center gap-1 text-xs font-medium text-yellow-800 bg-yellow-100 px-2 py-1 rounded">
-                        <AlertTriangle className="w-3 h-3" /> Needs Review
-                      </span>
-                    )}
-                    {isVerified && (
-                      <span className="flex items-center gap-1 text-xs font-medium text-green-800 bg-green-100 px-2 py-1 rounded">
-                        <CheckCircle className="w-3 h-3" /> Verified
-                      </span>
-                    )}
-                    {isCorrected && (
-                      <span className="flex items-center gap-1 text-xs font-medium text-blue-800 bg-blue-100 px-2 py-1 rounded">
-                        <CheckCircle className="w-3 h-3" /> Corrected
-                      </span>
-                    )}
-                    {!isNeedsReview && !isVerified && !isCorrected && (
-                      <span className="flex items-center gap-1 text-xs font-medium text-slate-600 bg-slate-100 px-2 py-1 rounded">
-                        Unverified
-                      </span>
-                    )}
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-4 text-sm">
-                    <div>
-                      <span className="text-slate-500 block text-xs">Value</span>
-                      <span className="font-medium">{item.value_raw} {item.unit_raw}</span>
-                    </div>
-                    <div>
-                      <span className="text-slate-500 block text-xs">Reference Range</span>
-                      <span>{item.reference_range_raw ?? '—'}</span>
-                    </div>
-                    <div>
-                      <span className="text-slate-500 block text-xs">Flag</span>
-                      <span>{item.flag_raw || '—'}</span>
-                    </div>
-                    <div>
-                      <span className="text-slate-500 block text-xs">Confidence</span>
-                      <span className={item.confidence_value < 0.9 ? 'text-red-600 font-medium' : 'text-green-600'}>
-                        {(item.confidence_value * 100).toFixed(0)}%
-                      </span>
-                    </div>
-                  </div>
-
-                  {isActionable && (
-                    <div className="mt-4 pt-4 border-t border-slate-200 flex justify-end gap-2">
-                      <button
-                        onClick={() => {
-                          setEditingResult(item);
-                          setCorrectedValue(item.value_raw);
-                        }}
-                        className="px-3 py-1.5 text-sm font-medium text-slate-700 bg-white border border-slate-300 rounded hover:bg-slate-50"
-                      >
-                        Edit &amp; Correct
-                      </button>
-                      <button
-                        onClick={() => handleVerify(item.id)}
-                        className="px-3 py-1.5 text-sm font-medium text-white bg-blue-600 rounded hover:bg-blue-700"
-                      >
-                        Verify as Reported
-                      </button>
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      </main>
     </div>
   );
 }

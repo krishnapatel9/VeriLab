@@ -50,25 +50,11 @@ export default function App() {
               </ProtectedRoute>
             }
           >
-            <Route path="/" element={<Intake />} />
+            <Route path="/" element={<RoleProtectedRoute allowedRoles={["uploader", "admin"]}><Intake /></RoleProtectedRoute>} />
             <Route path="/reports" element={<Reports />} />
+            <Route path="/review/:reportId" element={<RoleProtectedRoute allowedRoles={["reviewer", "admin"]}><Review /></RoleProtectedRoute>} />
+            <Route path="/consultation/:reportId" element={<RoleProtectedRoute allowedRoles={["doctor", "admin"]}><Consultation /></RoleProtectedRoute>} />
           </Route>
-          <Route
-            path="/review/:reportId"
-            element={
-              <ProtectedRoute>
-                <Review />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/consultation/:reportId"
-            element={
-              <RoleProtectedRoute allowedRoles={["doctor", "admin"]}>
-                <Consultation />
-              </RoleProtectedRoute>
-            }
-          />
 
           {/* Fallback */}
           <Route path="*" element={<Navigate to="/login" replace />} />

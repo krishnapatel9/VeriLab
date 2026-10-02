@@ -7,7 +7,11 @@ class ConsultationResultItem(BaseModel):
     """A single lab result as presented in the doctor's consultation view."""
     id: uuid.UUID
     test_name_raw: str
+    # Effective value: the latest reviewer correction if one exists, else the OCR text.
     value_raw: str
+    # The untouched OCR text (Invariant 2/4) — always returned so the UI can show both.
+    original_value_raw: str
+    is_corrected: bool = False
     unit_raw: str | None
     reference_range_raw: str | None
     flag_raw: str | None
@@ -38,6 +42,8 @@ class ConsultationResponse(BaseModel):
     consultation_type: str
     selected_results: List[ConsultationResultItem]
     additional_results: List[ConsultationResultItem]
+    # Results not yet verified by a reviewer. They are still returned (Invariants 5/6).
+    pending_count: int = 0
 
     class Config:
         from_attributes = True

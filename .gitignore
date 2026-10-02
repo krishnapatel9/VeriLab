@@ -8,7 +8,7 @@ venv/
 
 # Local development data
 backend/*.db
-backend/mock_storage/*/
+backend/mock_storage/*
 
 # Node and frontend build output
 frontend/node_modules/
