@@ -1,0 +1,22 @@
+fastapi>=0.100.0
+uvicorn[standard]>=0.23.0
+sqlalchemy>=2.0.0
+alembic>=1.11.0
+psycopg2-binary>=2.9.0
+pydantic>=2.0.0
+pydantic-settings>=2.0.0
+uuid7>=0.1.0
+python-multipart>=0.0.6
+python-dotenv>=1.0.0
+
+# OCR (Tesseract binary + Poppler must also be installed on the OS)
+pytesseract>=0.3.10
+pillow>=10.0.0
+pdf2image>=1.17.0
+
+# Auth. bcrypt 4.1+ breaks passlib's backend detection.
+python-jose[cryptography]>=3.3.0
+passlib[bcrypt]>=1.7.4
+bcrypt>=4.0.1,<4.1
+
+# Test-only packages live in requirements-dev.txt.

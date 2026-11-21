@@ -1,0 +1,11 @@
+venv/
+.venv/
+__pycache__/
+**/__pycache__/
+.pytest_cache/
+*.db
+.env
+mock_storage/
+tests/
+test_upload.py
+test_report.pdf

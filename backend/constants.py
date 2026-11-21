@@ -1,0 +1,109 @@
+"""Phase 1 seed identities, hard-coded consultation test list, and app settings.
+
+The test list is configuration-shaped (a named, version-labeled list) but not
+yet the Phase 2 Rules Service. Do not infer tests from free text.
+"""
+
+from __future__ import annotations
+
+import uuid
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+class Settings(BaseSettings):
+    """
+    Application settings loaded from environment variables or a .env file.
+    All values have safe defaults so the app runs without a .env (SQLite dev mode).
+    """
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        case_sensitive=False,
+        extra="ignore",
+    )
+
+    # Database — defaults to SQLite for fast local dev (no Docker needed)
+    database_url: str = "sqlite:///./verilab_dev.db"
+
+    # Security — MUST be changed for staging/production
+    secret_key: str = "dev_only_insecure_secret_key_change_before_staging"
+    algorithm: str = "HS256"
+    access_token_expire_minutes: int = 60 * 8  # one clinical shift
+
+    # CORS — comma-separated origins
+    allowed_origins: str = (
+        "http://localhost:5173,http://127.0.0.1:5173,"
+        "http://localhost:5174,http://127.0.0.1:5174"
+    )
+
+    # Upload limits
+    max_upload_bytes: int = 10 * 1024 * 1024  # 10 MB
+
+    # Where uploaded originals are written. On a host, point this at a persistent disk.
+    storage_dir: str = "mock_storage"
+
+    # Password for the synthetic demo users outside development. Unset = no demo
+    # users are created, so a public deploy never ships the well-known dev123.
+    demo_user_password: str = ""
+
+    # OCR provider: "mock" (development only) | "tesseract"
+    ocr_provider: str = "mock"
+
+    # Notification provider: "mock" | "ses" | "msg91"
+    notification_provider: str = "mock"
+
+    environment: str = "development"
+
+    @property
+    def allowed_origins_list(self) -> list[str]:
+        return [o.strip() for o in self.allowed_origins.split(",") if o.strip()]
+
+    @property
+    def sqlalchemy_database_url(self) -> str:
+        # Hosts such as Render/Heroku hand out "postgres://", which SQLAlchemy 2 rejects.
+        if self.database_url.startswith("postgres://"):
+            return "postgresql://" + self.database_url[len("postgres://"):]
+        return self.database_url
+
+
+# Module-level singleton — import settings from here, not re-instantiate
+settings = Settings()
+
+# Refuse to boot outside development with the well-known default signing key:
+# anyone could forge an admin token.
+if settings.environment != "development" and settings.secret_key == Settings.model_fields["secret_key"].default:
+    raise RuntimeError("SECRET_KEY must be set when ENVIRONMENT is not 'development'")
+
+# ---------------------------------------------------------------------------
+# Stable synthetic IDs (Phase 1 only — replaced by real auth in Phase 2)
+# ---------------------------------------------------------------------------
+SYNTH_TENANT_ID  = uuid.UUID("00000000-0000-4000-8000-000000000001")
+SYNTH_UPLOADER_ID = uuid.UUID("00000000-0000-4000-8000-000000000002")
+SYNTH_REVIEWER_ID = uuid.UUID("00000000-0000-4000-8000-000000000003")
+SYNTH_DOCTOR_ID   = uuid.UUID("00000000-0000-4000-8000-000000000004")
+SYNTH_ADMIN_ID    = uuid.UUID("00000000-0000-4000-8000-000000000005")
+
+
+SYNTH_TENANT_NAME = "SYNTH-Clinic-001"
+PHASE1_CONSULTATION_TYPE_NAME = "Phase1 General Consultation"
+PHASE1_RULE_VERSION = 1
+
+# Hard-coded selected tests for Sprint 4. Unlisted extracted tests must still
+# be stored and disclosed as additional results (FR-24 / FR-27).
+PHASE1_SELECTED_TEST_NAMES = ("Hemoglobin",)
+
+MAX_UPLOAD_BYTES = settings.max_upload_bytes
+ALLOWED_UPLOAD_SUFFIXES = (".pdf", ".png", ".jpg", ".jpeg")
+
+# Field-specific confidence thresholds (FR-17 / Tier 1.1)
+PHASE1_VALUE_CONFIDENCE_REVIEW_BELOW = 0.90
+
+FIELD_CONFIDENCE_THRESHOLDS = {
+    "patient_id": 0.99,
+    "value": 0.95,
+    "test_name": 0.90,
+    "unit": 0.90,
+    "reference_range": 0.85,
+}
+
+
