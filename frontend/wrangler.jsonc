@@ -1,0 +1,13 @@
+// Cloudflare Worker that serves the built website (dist/) as static files.
+// Cloudflare dashboard build settings: root directory "frontend",
+// build command "npm run build", deploy command "npx wrangler deploy".
+// "name" must match the Worker's name in the Cloudflare dashboard.
+{
+  "name": "verilab",
+  "compatibility_date": "2025-06-01",
+  "assets": {
+    "directory": "./dist",
+    // Unknown paths like /reports or /review/123 load index.html so React Router handles them.
+    "not_found_handling": "single-page-application"
+  }
+}
