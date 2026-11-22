@@ -95,7 +95,9 @@ export default function Reports() {
                         <span className="grid h-10 w-10 place-items-center rounded-lg bg-brand-soft text-brand"><FileText className="h-[18px] w-[18px]" /></span>
                         <div>
                           <p className="num text-sm font-medium">{r.id.slice(0, 8)}</p>
-                          <p className="num text-xs text-ink-3" title={r.file_hash}>sha256 {r.file_hash.slice(0, 10)}…</p>
+                          <p className="num text-xs text-ink-3" title={r.file_hash}>
+                            sha256 {r.file_hash.slice(0, 10)}… · {r.page_count} {r.page_count === 1 ? "page" : "pages"}
+                          </p>
                         </div>
                       </div>
                     </td>
@@ -104,6 +106,9 @@ export default function Reports() {
                     </td>
                     <td className="px-6 py-4">
                       <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium ring-1 ring-inset ${s.cls}`}>{s.icon}{s.label}</span>
+                      {r.status === "error" && r.processing_error && (
+                        <p className="mt-1.5 max-w-xs text-xs leading-snug text-ink-2">{r.processing_error}</p>
+                      )}
                     </td>
                     <td className="px-6 py-4 text-right">
                       {canOpen && (

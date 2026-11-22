@@ -50,7 +50,8 @@ def test_upload_and_view_with_database_storage(client, monkeypatch, uploader_hea
     monkeypatch.setattr(settings, "storage_backend", "db")
     storage.get_storage.cache_clear()
     try:
-        body = b"%PDF-1.4 db-backed " + uuid.uuid4().bytes.hex().encode()
+        from tests.sample_files import make_pdf
+        body = make_pdf()
         files = {"file": ("r.pdf", io.BytesIO(body), "application/pdf")}
         rid = client.post("/api/v1/intake/upload", files=files, headers=uploader_headers).json()["report_id"]
         resp = client.get(f"/api/v1/intake/reports/{rid}/file", headers=reviewer_headers)

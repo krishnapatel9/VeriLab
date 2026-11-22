@@ -264,6 +264,20 @@ class RapidOCRProvider(OCRProvider):
         return {"patient_info": {}, "results": results}
 
 
+def describe_ocr_failure(exc: BaseException) -> str:
+    """A reason a person can act on. Full details go to the logs and audit trail."""
+    name = type(exc).__name__
+    if isinstance(exc, FileNotFoundError):
+        return "The original file is missing from storage. Upload it again."
+    if isinstance(exc, MemoryError):
+        return "The file was too large to read on this server. Try a smaller scan or fewer pages."
+    if name == "PdfiumError":
+        return "The PDF couldn't be opened. It may be damaged; try exporting or scanning it again."
+    if name in ("UnidentifiedImageError", "DecompressionBombError"):
+        return "The image couldn't be opened. Try a different scan or photo."
+    return "Text recognition failed on this file. Try uploading it again; if it keeps failing, use a clearer scan."
+
+
 class OCRService:
     def __init__(self, db_session: Session, provider: OCRProvider = None):
         self.db = db_session
@@ -384,6 +398,7 @@ class OCRService:
 
             # 4. Mark report as processed
             report.status = 'processed'
+            report.processing_error = None
             self.db.commit()
             logger.info("Processed OCR for report %s", report_id)
 
@@ -391,6 +406,7 @@ class OCRService:
             self.db.rollback()
             self.last_error = f"{type(exc).__name__}: {exc}"[:500]
             report.status = 'error'
+            report.processing_error = describe_ocr_failure(exc)
             self.db.commit()
             logger.exception("OCR processing failed for report %s", report_id)
 

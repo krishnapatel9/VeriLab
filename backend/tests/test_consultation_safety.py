@@ -47,7 +47,8 @@ def test_double_verify_conflicts(client, db, reviewer_headers):
 
 def test_original_file_is_served_and_tenant_scoped(client, db, uploader_headers, reviewer_headers):
     import io
-    files = {"file": ("r.pdf", io.BytesIO(b"%PDF-1.4 synthetic"), "application/pdf")}
+    from tests.sample_files import make_pdf
+    files = {"file": ("r.pdf", io.BytesIO(make_pdf()), "application/pdf")}
     rid = client.post("/api/v1/intake/upload", files=files, headers=uploader_headers).json()["report_id"]
     ok = client.get(f"/api/v1/intake/reports/{rid}/file", headers=reviewer_headers)
     assert ok.status_code == 200 and ok.content.startswith(b"%PDF-")

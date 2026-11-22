@@ -38,6 +38,7 @@ class Settings(BaseSettings):
 
     # Upload limits
     max_upload_bytes: int = 10 * 1024 * 1024  # 10 MB
+    max_pdf_pages: int = 20  # one lab report; also bounds OCR time and memory
 
     # Where uploaded originals are written. On a host, point this at a persistent disk.
     storage_dir: str = "mock_storage"

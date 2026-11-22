@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 from db.models.core_models import Report, generate_uuidv7
 from constants import MAX_UPLOAD_BYTES
 from services.storage import get_storage
+from services.documents import inspect_document, UnreadableDocument
 
 class IntakeService:
     @staticmethod
@@ -52,6 +53,13 @@ class IntakeService:
                     detail="Encrypted or password-protected PDFs are not accepted",
                 )
 
+        # Open the file once now: a file that can never be read is refused here,
+        # with a reason, instead of being accepted and failing during OCR.
+        try:
+            page_count = inspect_document(contents, suffix)
+        except UnreadableDocument as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+
         file_hash = hashlib.sha256(contents).hexdigest()
         
         # 2. Save to tenant-scoped storage (local disk or R2, see services/storage.py)
@@ -73,7 +81,7 @@ class IntakeService:
             status="intake_pending",
             report_status_extracted="unknown",
             match_status="unmatched",
-            page_count=1 # Mock page count for now
+            page_count=page_count,
         )
         
         db.add(new_report)

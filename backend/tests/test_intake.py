@@ -13,13 +13,14 @@ import pytest
 
 from db.models.core_models import Report, AuditEvent
 from constants import SYNTH_TENANT_ID, SYNTH_UPLOADER_ID
+from tests.sample_files import make_pdf, make_png
 
 
 UPLOAD_URL = "/api/v1/intake/upload"
 
 
-def _make_pdf_file(content: bytes = b"%PDF-1.4 fake-pdf-content") -> dict:
-    return {"file": ("test_report.pdf", io.BytesIO(content), "application/pdf")}
+def _make_pdf_file(content: bytes | None = None) -> dict:
+    return {"file": ("test_report.pdf", io.BytesIO(content or make_pdf()), "application/pdf")}
 
 
 class TestUploadHappyPath:
@@ -32,7 +33,7 @@ class TestUploadHappyPath:
         assert data["status"] == "intake_pending"
 
     def test_file_hash_is_sha256_of_content(self, client, db, uploader_headers):
-        content = b"%PDF-1.4 unique-content-abc"
+        content = make_pdf("unique-content-abc")
         expected_hash = hashlib.sha256(content).hexdigest()
 
         resp = client.post(UPLOAD_URL, files=_make_pdf_file(content), headers=uploader_headers)
@@ -84,7 +85,7 @@ class TestUploadValidation:
     def test_png_file_accepted(self, client, uploader_headers):
         resp = client.post(
             UPLOAD_URL,
-            files={"file": ("scan.png", io.BytesIO(b"\x89PNG\r\n\x1a\n"), "image/png")},
+            files={"file": ("scan.png", io.BytesIO(make_png()), "image/png")},
             headers=uploader_headers,
         )
         assert resp.status_code == 200
@@ -115,3 +116,83 @@ class TestUploadValidation:
         assert resp.status_code == 400
         assert "encrypted" in resp.json()["detail"].lower()
 
+
+
+class TestUnreadableFilesRefused:
+    """A file that can never be read is refused at upload, with a reason,
+    instead of being accepted and failing during OCR."""
+
+    def test_placeholder_pdf_rejected(self, client, uploader_headers):
+        fake = b"%PDF-1.4\n%Dummy PDF content for testing upload endpoint\n%%EOF"
+        resp = client.post(UPLOAD_URL, files=_make_pdf_file(fake), headers=uploader_headers)
+        assert resp.status_code == 400
+        assert "can't be opened" in resp.json()["detail"]
+
+    def test_header_only_png_rejected(self, client, uploader_headers):
+        resp = client.post(
+            UPLOAD_URL,
+            files={"file": ("scan.png", io.BytesIO(b"\x89PNG\r\n\x1a\n"), "image/png")},
+            headers=uploader_headers,
+        )
+        assert resp.status_code == 400
+
+    def test_tiny_image_rejected(self, client, uploader_headers):
+        from PIL import Image
+        buf = io.BytesIO()
+        Image.new("RGB", (20, 20), "white").save(buf, format="PNG")
+        resp = client.post(UPLOAD_URL, files={"file": ("tiny.png", io.BytesIO(buf.getvalue()), "image/png")},
+                           headers=uploader_headers)
+        assert resp.status_code == 400
+        assert "too small" in resp.json()["detail"]
+
+    def test_too_many_pages_rejected(self, client, uploader_headers, monkeypatch):
+        from constants import settings
+        monkeypatch.setattr(settings, "max_pdf_pages", 0)
+        resp = client.post(UPLOAD_URL, files=_make_pdf_file(), headers=uploader_headers)
+        assert resp.status_code == 400
+        assert "limit" in resp.json()["detail"]
+
+    def test_real_page_count_is_stored(self, client, db, uploader_headers):
+        resp = client.post(UPLOAD_URL, files=_make_pdf_file(), headers=uploader_headers)
+        assert resp.status_code == 200
+        import uuid
+        report = db.get(Report, uuid.UUID(resp.json()["report_id"]))
+        assert report.page_count == 1
+
+    def test_sample_report_in_repo_is_a_real_pdf(self):
+        import os
+        from services.documents import inspect_document
+        here = os.path.dirname(__file__)
+        for path in ("../test_report.pdf", "../../Docs/demo-report.pdf"):
+            with open(os.path.join(here, path), "rb") as f:
+                assert inspect_document(f.read(), ".pdf") == 1
+
+
+def test_failed_ocr_records_a_reason(db):
+    """A report that fails OCR carries a plain-language reason for the list view."""
+    import asyncio, uuid
+    from db.models.core_models import generate_uuidv7
+    from services.ocr_service import OCRService, OCRProvider
+
+    class Broken(OCRProvider):
+        async def extract_data(self, file_path):
+            raise FileNotFoundError(file_path)
+
+    report = Report(id=generate_uuidv7(), tenant_id=SYNTH_TENANT_ID, uploader_user_id=SYNTH_UPLOADER_ID,
+                    file_object_key=f"{SYNTH_TENANT_ID}/{uuid.uuid4().hex}.pdf", file_hash=uuid.uuid4().hex * 2,
+                    status="intake_pending", report_status_extracted="unknown", match_status="unmatched", page_count=1)
+    db.add(report)
+    db.commit()
+    service = OCRService(db, Broken())
+    asyncio.run(service.process_report(report.id))
+    db.refresh(report)
+    assert report.status == "error"
+    assert "missing" in report.processing_error
+    assert service.last_error.startswith("FileNotFoundError")
+
+
+def test_report_list_includes_reason_and_pages(client, uploader_headers):
+    resp = client.get("/api/v1/intake/reports", headers=uploader_headers)
+    assert resp.status_code == 200
+    for r in resp.json()["reports"]:
+        assert "processing_error" in r and "page_count" in r

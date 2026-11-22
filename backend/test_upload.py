@@ -4,10 +4,8 @@ import time
 # Wait a moment to ensure the server is fully up
 time.sleep(2)
 
-# Create a dummy PDF file for testing
+# A real one-page synthetic lab report (same as Docs/demo-report.pdf).
 dummy_file_path = "test_report.pdf"
-with open(dummy_file_path, "wb") as f:
-    f.write(b"%PDF-1.4\n%Dummy PDF content for testing upload endpoint\n%%EOF")
 
 url = "http://127.0.0.1:8000/api/v1/intake/upload"
 

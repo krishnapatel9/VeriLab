@@ -17,6 +17,22 @@ def _init_db():
     """SQLite dev: create tables directly. Postgres: schema comes from `alembic upgrade head`."""
     if engine.dialect.name == "sqlite":
         Base.metadata.create_all(bind=engine)
+        _add_missing_sqlite_columns()
+
+
+def _add_missing_sqlite_columns():
+    """create_all() makes new tables but never new columns. Add any new nullable
+    column to an existing dev database so it keeps working after an upgrade."""
+    from sqlalchemy import inspect, text
+
+    insp = inspect(engine)
+    with engine.begin() as conn:
+        for table in Base.metadata.sorted_tables:
+            existing = {c["name"] for c in insp.get_columns(table.name)}
+            for col in table.columns:
+                if col.name not in existing and col.nullable:
+                    col_type = col.type.compile(dialect=engine.dialect)
+                    conn.execute(text(f'ALTER TABLE "{table.name}" ADD COLUMN "{col.name}" {col_type}'))
 
 
 def _seed_db():

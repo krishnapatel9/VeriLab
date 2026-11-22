@@ -28,6 +28,9 @@ export interface ReportListItem {
   id: string;
   file_hash: string;
   status: string;
+  page_count: number;
+  /** Plain-language reason, set when status is "error". */
+  processing_error: string | null;
   created_at: string;
 }
 

@@ -108,9 +108,10 @@ class TestAuditHashChain:
     def test_upload_action_emits_audit_event(self, client, db, uploader_headers):
         """Integration: uploading a report must produce an audit event."""
         import io
+        from tests.sample_files import make_pdf
         resp = client.post(
             "/api/v1/intake/upload",
-            files={"file": ("test.pdf", io.BytesIO(b"%PDF-1.4 test"), "application/pdf")},
+            files={"file": ("test.pdf", io.BytesIO(make_pdf()), "application/pdf")},
             headers=uploader_headers,
         )
         assert resp.status_code == 200
