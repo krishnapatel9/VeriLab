@@ -1,0 +1,82 @@
+"""Where uploaded originals live.
+
+STORAGE_BACKEND=local (default): files under STORAGE_DIR on this machine's disk.
+STORAGE_BACKEND=r2: files in a Cloudflare R2 bucket, so they survive restarts on
+hosts without a persistent disk (e.g. Render's free plan).
+"""
+
+from __future__ import annotations
+
+import os
+from functools import lru_cache
+
+from constants import settings
+
+
+class FileStorage:
+    def put(self, key: str, data: bytes) -> None:
+        raise NotImplementedError
+
+    def get(self, key: str) -> bytes | None:
+        """Return the file's bytes, or None if it does not exist."""
+        raise NotImplementedError
+
+
+class LocalStorage(FileStorage):
+    def __init__(self, root: str):
+        self.root = root
+        os.makedirs(root, exist_ok=True)
+
+    def _path(self, key: str) -> str:
+        path = os.path.abspath(os.path.join(self.root, key))
+        if not path.startswith(os.path.abspath(self.root) + os.sep):
+            raise ValueError("Storage key escapes the storage folder")
+        return path
+
+    def put(self, key: str, data: bytes) -> None:
+        path = self._path(key)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "wb") as f:
+            f.write(data)
+
+    def get(self, key: str) -> bytes | None:
+        path = self._path(key)
+        if not os.path.exists(path):
+            return None
+        with open(path, "rb") as f:
+            return f.read()
+
+
+class R2Storage(FileStorage):
+    def __init__(self, account_id: str, access_key_id: str, secret_access_key: str, bucket: str):
+        import boto3  # only needed when R2 is in use
+
+        self.bucket = bucket
+        self.client = boto3.client(
+            "s3",
+            endpoint_url=f"https://{account_id}.r2.cloudflarestorage.com",
+            aws_access_key_id=access_key_id,
+            aws_secret_access_key=secret_access_key,
+            region_name="auto",
+        )
+
+    def put(self, key: str, data: bytes) -> None:
+        self.client.put_object(Bucket=self.bucket, Key=key, Body=data)
+
+    def get(self, key: str) -> bytes | None:
+        try:
+            return self.client.get_object(Bucket=self.bucket, Key=key)["Body"].read()
+        except self.client.exceptions.NoSuchKey:
+            return None
+
+
+@lru_cache(maxsize=1)
+def get_storage() -> FileStorage:
+    if settings.storage_backend == "r2":
+        missing = [n for n in ("r2_account_id", "r2_access_key_id", "r2_secret_access_key", "r2_bucket")
+                   if not getattr(settings, n)]
+        if missing:
+            raise RuntimeError(f"STORAGE_BACKEND=r2 but these are not set: {', '.join(m.upper() for m in missing)}")
+        return R2Storage(settings.r2_account_id, settings.r2_access_key_id,
+                         settings.r2_secret_access_key, settings.r2_bucket)
+    return LocalStorage(settings.storage_dir)

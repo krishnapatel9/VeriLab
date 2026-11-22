@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, UploadFile, File, HTTPException, BackgroundTasks
-from fastapi.responses import FileResponse
+from fastapi.responses import Response
 import os
 from sqlalchemy.orm import Session
 import uuid
@@ -13,7 +13,8 @@ from db.models.core_models import User, Report
 from services.ocr_service import OCRService
 from core.audit import emit_audit_event
 from api.dependencies import require_role
-from constants import ALLOWED_UPLOAD_SUFFIXES, settings
+from constants import ALLOWED_UPLOAD_SUFFIXES
+from services.storage import get_storage
 
 router = APIRouter(prefix="/api/v1/intake", tags=["Intake"])
 logger = logging.getLogger(__name__)
@@ -78,8 +79,8 @@ def get_original_file(
     ).first()
     if not report:
         raise HTTPException(status_code=404, detail="Report not found")
-    path = os.path.join(settings.storage_dir, report.file_object_key)
-    if not os.path.exists(path):
+    data = get_storage().get(report.file_object_key)
+    if data is None:
         raise HTTPException(status_code=404, detail="Original file is missing from storage")
     emit_audit_event(
         db=db, event_type="report.file_viewed", resource_type="report", resource_id=report.id,
@@ -87,8 +88,8 @@ def get_original_file(
         actor_user_id=current_user.id, tenant_id=current_user.tenant_id,
     )
     db.commit()
-    media = _MEDIA.get(os.path.splitext(path)[1].lower(), "application/octet-stream")
-    return FileResponse(path, media_type=media, headers={"Cache-Control": "private, no-store"})
+    media = _MEDIA.get(os.path.splitext(report.file_object_key)[1].lower(), "application/octet-stream")
+    return Response(content=data, media_type=media, headers={"Cache-Control": "private, no-store"})
 
 
 @router.post("/upload", response_model=UploadResponse)

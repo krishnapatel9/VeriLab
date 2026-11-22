@@ -42,6 +42,13 @@ class Settings(BaseSettings):
     # Where uploaded originals are written. On a host, point this at a persistent disk.
     storage_dir: str = "mock_storage"
 
+    # "local" = storage_dir on disk | "r2" = Cloudflare R2 bucket (no disk needed)
+    storage_backend: str = "local"
+    r2_account_id: str = ""
+    r2_access_key_id: str = ""
+    r2_secret_access_key: str = ""
+    r2_bucket: str = ""
+
     # Password for the synthetic demo users outside development. Unset = no demo
     # users are created, so a public deploy never ships the well-known dev123.
     demo_user_password: str = ""

@@ -1,0 +1,10 @@
+name = "verilab-keepalive"
+main = "src/index.js"
+compatibility_date = "2025-06-01"
+
+[triggers]
+crons = ["*/10 * * * *"]
+
+[vars]
+# Your Render backend URL, no trailing slash.
+BACKEND_URL = "https://verilab-api.onrender.com"

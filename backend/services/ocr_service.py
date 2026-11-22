@@ -1,5 +1,5 @@
+import io
 import logging
-import os
 import re
 from abc import ABC, abstractmethod
 from typing import List, Dict, Any
@@ -7,9 +7,10 @@ import uuid
 import asyncio
 import pytesseract
 from PIL import Image
-from pdf2image import convert_from_path
+from pdf2image import convert_from_bytes
 from sqlalchemy.orm import Session
 from db.models.core_models import Report, Result, ReviewItem, generate_uuidv7
+from services.storage import get_storage
 from constants import (
     PHASE1_VALUE_CONFIDENCE_REVIEW_BELOW,
     FIELD_CONFIDENCE_THRESHOLDS,
@@ -105,12 +106,12 @@ class TesseractOCRProvider(OCRProvider):
     'error' rather than showing invented results.
     """
     async def extract_data(self, file_path: str) -> Dict[str, Any]:
-        real_path = os.path.join(settings.storage_dir, file_path)
-        if not os.path.exists(real_path):
+        data = await asyncio.to_thread(get_storage().get, file_path)
+        if data is None:
             raise FileNotFoundError(f"Stored file missing for {file_path}")
 
-        images = convert_from_path(real_path) if real_path.lower().endswith(".pdf") \
-            else [Image.open(real_path)]
+        images = convert_from_bytes(data) if file_path.lower().endswith(".pdf") \
+            else [Image.open(io.BytesIO(data))]
 
         results: List[Dict[str, Any]] = []
         for page_no, img in enumerate(images, start=1):

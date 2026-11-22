@@ -5,11 +5,8 @@ from fastapi import UploadFile
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 from db.models.core_models import Report, generate_uuidv7
-from constants import MAX_UPLOAD_BYTES, settings
-
-# Local "object storage" folder; set STORAGE_DIR to a persistent disk on a host.
-STORAGE_DIR = settings.storage_dir
-os.makedirs(STORAGE_DIR, exist_ok=True)
+from constants import MAX_UPLOAD_BYTES
+from services.storage import get_storage
 
 class IntakeService:
     @staticmethod
@@ -57,17 +54,12 @@ class IntakeService:
 
         file_hash = hashlib.sha256(contents).hexdigest()
         
-        # 2. Save to tenant-scoped object storage (Mock)
+        # 2. Save to tenant-scoped storage (local disk or R2, see services/storage.py)
         suffix = os.path.splitext(file.filename or "")[1].lower()
         storage_filename = f"{file_hash}{suffix}"
         file_object_key = f"{tenant_id}/{storage_filename}"
-        tenant_storage_dir = os.path.join(STORAGE_DIR, str(tenant_id))
-        os.makedirs(tenant_storage_dir, exist_ok=True)
-        local_path = os.path.join(tenant_storage_dir, storage_filename)
-        
-        with open(local_path, "wb") as f:
-            f.write(contents)
-            
+        get_storage().put(file_object_key, contents)
+
         # Reset file pointer if needed by other services
         await file.seek(0)
 
