@@ -1,5 +1,5 @@
 # Render Blueprint: Dashboard → New → Blueprint → pick this repo. See DEPLOY.md.
-# Free setup: backend only on Render. The website is on Cloudflare Pages, the
+# Free setup: backend only on Render. The website is a Cloudflare Worker, the
 # database (and uploaded files, STORAGE_BACKEND=db) on Neon, and a Cloudflare
 # Worker (infrastructure/cloudflare/keepalive) keeps this service from sleeping.
 # To use Cloudflare R2 for files instead: set STORAGE_BACKEND=r2 and the R2_* vars.
@@ -26,7 +26,7 @@ services:
       # Set these in the dashboard when Render asks (see DEPLOY.md):
       - key: DATABASE_URL          # Neon connection string
         sync: false
-      - key: ALLOWED_ORIGINS       # your Cloudflare Pages URL, e.g. https://verilab.pages.dev
+      - key: ALLOWED_ORIGINS       # your website URL, e.g. https://verilab.<you>.workers.dev
         sync: false
       - key: DEMO_USER_PASSWORD    # strong password for the 4 demo logins
         sync: false

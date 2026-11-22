@@ -107,7 +107,7 @@ TESTING=1 python -m pytest        # PowerShell: $env:TESTING=1; python -m pytest
 
 ### Deploying
 
-See [DEPLOY.md](DEPLOY.md) for a free, no-card setup: Cloudflare Pages, Render, Neon and a keep-awake Worker.
+See [DEPLOY.md](DEPLOY.md) for a free, no-card setup: Cloudflare Workers (website + keep-awake ping), Render and Neon.
 
 ## Tech
 
