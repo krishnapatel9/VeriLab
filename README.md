@@ -32,7 +32,7 @@ The design rule behind all of it: **a plausible-looking wrong number is worse th
 | Backend API | https://verilab-api-mdy8.onrender.com ([health](https://verilab-api-mdy8.onrender.com/health), [docs](https://verilab-api-mdy8.onrender.com/docs)) |
 | Keep-awake ping | https://verilab-keepalive.krishna-patel092004.workers.dev |
 
-Pick a role on the sign-in page. The demo password is not published here; ask the maintainer for it. Use synthetic reports only: try [`Docs/demo-report.png`](Docs/demo-report.png). If the backend was idle, the first request can take up to a minute while it starts; the page shows "Starting the server…" and carries on by itself.
+Pick a role on the sign-in page and use the shared demo password **`w2j2gMWYAGldRmy7`** (same for Uploader, Reviewer and Doctor). Use synthetic reports only: try [`Docs/demo-report.png`](Docs/demo-report.png). If the backend was idle, the first request can take up to a minute while it starts; the page shows "Starting the server…" and carries on by itself.
 
 Hosted for free on Cloudflare Workers, Render and Neon. See [DEPLOY.md](DEPLOY.md).
 
