@@ -67,10 +67,14 @@ class Settings(BaseSettings):
 
     @property
     def sqlalchemy_database_url(self) -> str:
-        # Hosts such as Render/Heroku hand out "postgres://", which SQLAlchemy 2 rejects.
-        if self.database_url.startswith("postgres://"):
-            return "postgresql://" + self.database_url[len("postgres://"):]
-        return self.database_url
+        # Providers hand out several spellings: "postgres://" (Render/Heroku, rejected by
+        # SQLAlchemy 2), "postgresql://", or "postgresql+psycopg://" (Neon's SQLAlchemy
+        # snippet, which needs psycopg 3). We ship psycopg2, so pin every form to it.
+        url = self.database_url.strip()
+        scheme, sep, rest = url.partition("://")
+        if sep and (scheme == "postgres" or scheme == "postgresql" or scheme.startswith("postgresql+")):
+            return "postgresql+psycopg2://" + rest
+        return url
 
 
 # Module-level singleton — import settings from here, not re-instantiate

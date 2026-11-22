@@ -57,3 +57,19 @@ def test_upload_and_view_with_database_storage(client, monkeypatch, uploader_hea
         assert resp.status_code == 200 and resp.content == body
     finally:
         storage.get_storage.cache_clear()
+
+
+@pytest.mark.parametrize("given", [
+    "postgres://u:p@host/db?sslmode=require",
+    "postgresql://u:p@host/db?sslmode=require",
+    "postgresql+psycopg://u:p@host/db?sslmode=require",
+    "  postgresql+psycopg2://u:p@host/db?sslmode=require ",
+])
+def test_database_url_always_uses_installed_driver(given):
+    from constants import Settings
+    assert Settings(database_url=given).sqlalchemy_database_url == "postgresql+psycopg2://u:p@host/db?sslmode=require"
+
+
+def test_sqlite_url_unchanged():
+    from constants import Settings
+    assert Settings(database_url="sqlite:///./x.db").sqlalchemy_database_url == "sqlite:///./x.db"
