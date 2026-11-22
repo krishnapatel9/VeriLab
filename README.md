@@ -8,6 +8,8 @@
 
 <sub>Phase 1 prototype · synthetic data only · not for clinical use</sub>
 
+**[▶ Live demo](https://verilab.krishna-patel092004.workers.dev)** · [API health](https://verilab-api-mdy8.onrender.com/health) · [API docs](https://verilab-api-mdy8.onrender.com/docs)
+
 <br />
 
 <img src="Docs/screenshots/04-review.png" alt="Verilab review screen: the original document beside the extracted values" width="900" />
@@ -21,6 +23,18 @@
 Verilab is a lab-report intake and review system. An uploader sends in a PDF or photo of a lab report. OCR extracts the values. A **reviewer** checks each one against the original and corrects misreads. A **doctor** then reads a consultation view that shows every result together with how far it has been verified.
 
 The design rule behind all of it: **a plausible-looking wrong number is worse than a slow correct one.** So the system never hides uncertainty, never overwrites what OCR read, and never drops a flagged result.
+
+## Live demo
+
+| | Link |
+|---|---|
+| Website | https://verilab.krishna-patel092004.workers.dev |
+| Backend API | https://verilab-api-mdy8.onrender.com ([health](https://verilab-api-mdy8.onrender.com/health), [docs](https://verilab-api-mdy8.onrender.com/docs)) |
+| Keep-awake ping | https://verilab-keepalive.krishna-patel092004.workers.dev |
+
+Pick a role on the sign-in page. The demo password is not published here; ask the maintainer for it. Use synthetic reports only: try [`Docs/demo-report.png`](Docs/demo-report.png). If the backend was idle, the first request can take up to a minute while it starts; the page shows "Starting the server…" and carries on by itself.
+
+Hosted for free on Cloudflare Workers, Render and Neon. See [DEPLOY.md](DEPLOY.md).
 
 ## Three roles
 
