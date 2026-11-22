@@ -1,7 +1,8 @@
 # Render Blueprint: Dashboard → New → Blueprint → pick this repo. See DEPLOY.md.
 # Free setup: backend only on Render. The website is on Cloudflare Pages, the
-# database on Neon, uploaded files in Cloudflare R2, and a Cloudflare Worker
-# (infrastructure/cloudflare/keepalive) keeps this service from sleeping.
+# database (and uploaded files, STORAGE_BACKEND=db) on Neon, and a Cloudflare
+# Worker (infrastructure/cloudflare/keepalive) keeps this service from sleeping.
+# To use Cloudflare R2 for files instead: set STORAGE_BACKEND=r2 and the R2_* vars.
 # Synthetic demo data only. Not for real patient data (see AUDIT.md).
 services:
   - type: web
@@ -19,7 +20,7 @@ services:
       - key: OCR_PROVIDER
         value: tesseract
       - key: STORAGE_BACKEND
-        value: r2
+        value: db
       - key: MAX_UPLOAD_BYTES
         value: "10485760"
       # Set these in the dashboard when Render asks (see DEPLOY.md):
@@ -28,12 +29,4 @@ services:
       - key: ALLOWED_ORIGINS       # your Cloudflare Pages URL, e.g. https://verilab.pages.dev
         sync: false
       - key: DEMO_USER_PASSWORD    # strong password for the 4 demo logins
-        sync: false
-      - key: R2_ACCOUNT_ID
-        sync: false
-      - key: R2_ACCESS_KEY_ID
-        sync: false
-      - key: R2_SECRET_ACCESS_KEY
-        sync: false
-      - key: R2_BUCKET             # e.g. verilab-uploads
         sync: false

@@ -1,8 +1,12 @@
 """Where uploaded originals live.
 
 STORAGE_BACKEND=local (default): files under STORAGE_DIR on this machine's disk.
-STORAGE_BACKEND=r2: files in a Cloudflare R2 bucket, so they survive restarts on
-hosts without a persistent disk (e.g. Render's free plan).
+STORAGE_BACKEND=db: files in the app's own database (stored_files table). No
+    extra service needed; survives restarts on hosts without a persistent disk.
+STORAGE_BACKEND=r2: files in a Cloudflare R2 bucket.
+
+`db` is the caller's SQLAlchemy session. The db backend writes through it, so a
+file is saved in the same transaction as its report; other backends ignore it.
 """
 
 from __future__ import annotations
@@ -10,16 +14,41 @@ from __future__ import annotations
 import os
 from functools import lru_cache
 
+from sqlalchemy.orm import Session
+
 from constants import settings
 
 
 class FileStorage:
-    def put(self, key: str, data: bytes) -> None:
+    def put(self, key: str, data: bytes, db: Session | None = None) -> None:
         raise NotImplementedError
 
-    def get(self, key: str) -> bytes | None:
+    def get(self, key: str, db: Session | None = None) -> bytes | None:
         """Return the file's bytes, or None if it does not exist."""
         raise NotImplementedError
+
+
+class DatabaseStorage(FileStorage):
+    def put(self, key: str, data: bytes, db: Session | None = None) -> None:
+        from db.models.core_models import StoredFile
+
+        if db is None:
+            raise ValueError("DatabaseStorage.put needs the caller's session")
+        if db.get(StoredFile, key) is None:  # same hash = same bytes; keep the original
+            db.add(StoredFile(key=key, data=data, size_bytes=len(data)))
+            db.flush()
+
+    def get(self, key: str, db: Session | None = None) -> bytes | None:
+        from db.models.core_models import StoredFile
+
+        if db is not None:
+            row = db.get(StoredFile, key)
+            return bytes(row.data) if row else None
+        from api.dependencies import SessionLocal
+
+        with SessionLocal() as own:
+            row = own.get(StoredFile, key)
+            return bytes(row.data) if row else None
 
 
 class LocalStorage(FileStorage):
@@ -33,13 +62,13 @@ class LocalStorage(FileStorage):
             raise ValueError("Storage key escapes the storage folder")
         return path
 
-    def put(self, key: str, data: bytes) -> None:
+    def put(self, key: str, data: bytes, db: Session | None = None) -> None:
         path = self._path(key)
         os.makedirs(os.path.dirname(path), exist_ok=True)
         with open(path, "wb") as f:
             f.write(data)
 
-    def get(self, key: str) -> bytes | None:
+    def get(self, key: str, db: Session | None = None) -> bytes | None:
         path = self._path(key)
         if not os.path.exists(path):
             return None
@@ -60,10 +89,10 @@ class R2Storage(FileStorage):
             region_name="auto",
         )
 
-    def put(self, key: str, data: bytes) -> None:
+    def put(self, key: str, data: bytes, db: Session | None = None) -> None:
         self.client.put_object(Bucket=self.bucket, Key=key, Body=data)
 
-    def get(self, key: str) -> bytes | None:
+    def get(self, key: str, db: Session | None = None) -> bytes | None:
         try:
             return self.client.get_object(Bucket=self.bucket, Key=key)["Body"].read()
         except self.client.exceptions.NoSuchKey:
@@ -72,6 +101,8 @@ class R2Storage(FileStorage):
 
 @lru_cache(maxsize=1)
 def get_storage() -> FileStorage:
+    if settings.storage_backend == "db":
+        return DatabaseStorage()
     if settings.storage_backend == "r2":
         missing = [n for n in ("r2_account_id", "r2_access_key_id", "r2_secret_access_key", "r2_bucket")
                    if not getattr(settings, n)]

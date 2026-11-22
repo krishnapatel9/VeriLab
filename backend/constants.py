@@ -42,7 +42,7 @@ class Settings(BaseSettings):
     # Where uploaded originals are written. On a host, point this at a persistent disk.
     storage_dir: str = "mock_storage"
 
-    # "local" = storage_dir on disk | "r2" = Cloudflare R2 bucket (no disk needed)
+    # "local" = storage_dir on disk | "db" = in the database | "r2" = Cloudflare R2 bucket
     storage_backend: str = "local"
     r2_account_id: str = ""
     r2_access_key_id: str = ""

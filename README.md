@@ -103,11 +103,11 @@ TESTING=1 python -m pytest        # PowerShell: $env:TESTING=1; python -m pytest
 | `OCR_PROVIDER` | `mock` | `mock` or `tesseract` |
 | `ALLOWED_ORIGINS` | localhost:5173/5174 | Comma-separated |
 | `VITE_API_BASE_URL` | `http://127.0.0.1:8000` | Frontend → backend address |
-| `STORAGE_BACKEND` | `local` | `local` (files in `STORAGE_DIR`) or `r2` (Cloudflare R2; also set `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET`) |
+| `STORAGE_BACKEND` | `local` | Where uploaded files go: `local` (files in `STORAGE_DIR`), `db` (in the database) or `r2` (Cloudflare R2; also set `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET`) |
 
 ### Deploying
 
-See [DEPLOY.md](DEPLOY.md) for a free setup: Cloudflare Pages, Render, Neon, Cloudflare R2 and a keep-awake Worker.
+See [DEPLOY.md](DEPLOY.md) for a free, no-card setup: Cloudflare Pages, Render, Neon and a keep-awake Worker.
 
 ## Tech
 

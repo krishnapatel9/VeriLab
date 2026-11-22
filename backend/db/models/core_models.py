@@ -2,7 +2,7 @@ from datetime import datetime
 from typing import Optional
 import uuid
 
-from sqlalchemy import String, Boolean, DateTime, Integer, Numeric, ForeignKey, JSON, Text
+from sqlalchemy import String, Boolean, DateTime, Integer, Numeric, ForeignKey, JSON, Text, LargeBinary
 from sqlalchemy.orm import declarative_base, Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
 from sqlalchemy.types import Uuid  # SQLAlchemy 2.0 dialect-agnostic UUID
@@ -184,6 +184,17 @@ class AuditEvent(Base):
     prev_event_hash: Mapped[str] = mapped_column(String, nullable=False)
     event_hash: Mapped[str] = mapped_column(String, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class StoredFile(Base):
+    """Uploaded originals, when STORAGE_BACKEND=db (no separate file storage needed).
+    Keyed by Report.file_object_key; immutable once written."""
+    __tablename__ = 'stored_files'
+
+    key: Mapped[str] = mapped_column(String, primary_key=True)
+    data: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
+    size_bytes: Mapped[int] = mapped_column(Integer, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
 
 class ConsultationTypeRule(Base):

@@ -79,7 +79,7 @@ def get_original_file(
     ).first()
     if not report:
         raise HTTPException(status_code=404, detail="Report not found")
-    data = get_storage().get(report.file_object_key)
+    data = get_storage().get(report.file_object_key, db)
     if data is None:
         raise HTTPException(status_code=404, detail="Original file is missing from storage")
     emit_audit_event(

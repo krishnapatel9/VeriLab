@@ -58,7 +58,7 @@ class IntakeService:
         suffix = os.path.splitext(file.filename or "")[1].lower()
         storage_filename = f"{file_hash}{suffix}"
         file_object_key = f"{tenant_id}/{storage_filename}"
-        get_storage().put(file_object_key, contents)
+        get_storage().put(file_object_key, contents, db)
 
         # Reset file pointer if needed by other services
         await file.seek(0)
