@@ -1,6 +1,11 @@
+import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+
+# Send the app's own log lines (e.g. "OCR processing failed ..." with its
+# traceback) to stdout, so they show up in the host's logs. Uvicorn keeps its own.
+logging.basicConfig(level=logging.INFO, format="%(levelname)s [%(name)s] %(message)s")
 from fastapi.middleware.cors import CORSMiddleware
 
 from db.models.core_models import Base

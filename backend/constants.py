@@ -22,7 +22,7 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
-    # Database — defaults to SQLite for fast local dev (no Docker needed)
+    # Database — defaults to SQLite for fast local dev
     database_url: str = "sqlite:///./verilab_dev.db"
 
     # Security — MUST be changed for staging/production
@@ -53,8 +53,11 @@ class Settings(BaseSettings):
     # users are created, so a public deploy never ships the well-known dev123.
     demo_user_password: str = ""
 
-    # OCR provider: "mock" (development only) | "tesseract"
+    # OCR provider: "mock" (development only) | "rapidocr"
     ocr_provider: str = "mock"
+    # Longest side (px) the OCR text detector works at. Higher reads smaller print
+    # but needs more memory; 960 fits a 512 MB host.
+    ocr_det_max_side: int = 960
 
     # Notification provider: "mock" | "ses" | "msg91"
     notification_provider: str = "mock"

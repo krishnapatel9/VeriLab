@@ -7,18 +7,23 @@
 services:
   - type: web
     name: verilab-api
-    runtime: docker
+    runtime: python
     rootDir: backend
-    dockerfilePath: ./Dockerfile
     plan: free
+    # Install packages, then download and load the OCR models once at build time,
+    # so the first upload doesn't wait for (or fail on) the model download.
+    buildCommand: pip install -r requirements.txt && python -c "from services.ocr_service import warm_up; warm_up()"
+    startCommand: alembic upgrade head && uvicorn main:app --host 0.0.0.0 --port $PORT --proxy-headers --forwarded-allow-ips='*'
     healthCheckPath: /health
     envVars:
+      - key: PYTHON_VERSION
+        value: "3.12.8"
       - key: ENVIRONMENT
         value: production
       - key: SECRET_KEY
         generateValue: true
       - key: OCR_PROVIDER
-        value: tesseract
+        value: rapidocr
       - key: STORAGE_BACKEND
         value: db
       - key: MAX_UPLOAD_BYTES

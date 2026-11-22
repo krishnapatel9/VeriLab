@@ -5,7 +5,7 @@ Synthetic demo data only. Not for real patient data (see `AUDIT.md`).
 | Part | Where | Cost |
 |---|---|---|
 | Website (React) | Cloudflare Worker (static files) | Free |
-| Backend (FastAPI + Tesseract OCR) | Render, free plan | Free |
+| Backend (FastAPI + RapidOCR) | Render, free plan, plain Python | Free |
 | Keeps the backend awake | Cloudflare Worker, every 10 min | Free |
 | Database (Postgres) and uploaded reports | Neon | Free, 0.5 GB |
 

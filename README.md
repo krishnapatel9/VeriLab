@@ -98,7 +98,9 @@ The first run creates and seeds a SQLite database. Open the app, pick a role, an
 
 By default Verilab runs with `OCR_PROVIDER=mock`, which returns the **same fixed demo results for every upload**. It exists to demo the review flow, not to read your files.
 
-For real extraction set `OCR_PROVIDER=tesseract` and install the [Tesseract](https://github.com/tesseract-ocr/tesseract) binary (plus [Poppler](https://poppler.freedesktop.org/) for PDFs). The Tesseract provider reads single-line result rows (`Name value unit range flag`) and uses Tesseract's own confidence. It never invents values. On failure the report goes to `error`.
+For real extraction set `OCR_PROVIDER=rapidocr`. It uses [RapidOCR](https://github.com/RapidAI/RapidOCR) (PaddleOCR models on ONNX Runtime) and [pypdfium2](https://github.com/pypdfium2-team/pypdfium2) for PDFs. Both are plain `pip install`s from `requirements.txt`, with nothing to install on the OS. The models download on first use (about 30 MB).
+
+The provider groups the detected text boxes into printed lines, then reads result rows of the form `Name value unit range flag`. Each field's confidence is the recogniser's score for the box that field came from, so a doubtful unit is flagged without casting doubt on the value. Bounded values like `<0.01` are kept verbatim and never stored as numbers. It never invents values. On failure the report goes to `error`, and the reason is logged and recorded in the audit trail.
 
 ### Tests
 
@@ -114,7 +116,8 @@ TESTING=1 python -m pytest        # PowerShell: $env:TESTING=1; python -m pytest
 | `DATABASE_URL` | `sqlite:///./verilab_dev.db` | PostgreSQL for staging and production |
 | `SECRET_KEY` | dev-only key | **Required** when `ENVIRONMENT` is not `development`. The app refuses to start without it |
 | `ENVIRONMENT` | `development` | |
-| `OCR_PROVIDER` | `mock` | `mock` or `tesseract` |
+| `OCR_PROVIDER` | `mock` | `mock` or `rapidocr` |
+| `OCR_DET_MAX_SIDE` | `960` | Longest side (px) the OCR detector works at. Higher reads smaller print but uses more memory |
 | `ALLOWED_ORIGINS` | localhost:5173/5174 | Comma-separated |
 | `VITE_API_BASE_URL` | `http://127.0.0.1:8000` | Frontend → backend address |
 | `STORAGE_BACKEND` | `local` | Where uploaded files go: `local` (files in `STORAGE_DIR`), `db` (in the database) or `r2` (Cloudflare R2; also set `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET`) |
@@ -125,7 +128,7 @@ See [DEPLOY.md](DEPLOY.md) for a free, no-card setup: Cloudflare Workers (websit
 
 ## Tech
 
-**Frontend:** React 18, TypeScript, Vite, Tailwind CSS. **Backend:** FastAPI, SQLAlchemy 2, Pydantic v2, JWT auth. **Data:** SQLite in development, PostgreSQL planned. **OCR:** Tesseract behind an `OCRProvider` interface, so a managed provider can replace it.
+**Frontend:** React 18, TypeScript, Vite, Tailwind CSS. **Backend:** FastAPI, SQLAlchemy 2, Pydantic v2, JWT auth. **Data:** SQLite in development, PostgreSQL planned. **OCR:** RapidOCR behind an `OCRProvider` interface, so a managed provider can replace it.
 
 ```
 backend/   FastAPI app: routers, services (intake, OCR), models, audit, tests

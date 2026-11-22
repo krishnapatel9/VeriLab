@@ -5,9 +5,8 @@ from abc import ABC, abstractmethod
 from typing import List, Dict, Any
 import uuid
 import asyncio
-import pytesseract
+import threading
 from PIL import Image
-from pdf2image import convert_from_bytes
 from sqlalchemy.orm import Session
 from db.models.core_models import Report, Result, ReviewItem, generate_uuidv7
 from services.storage import get_storage
@@ -97,50 +96,170 @@ _LINE = re.compile(
     r"(?P<flag>High|Low|Normal|Critical|H|L|\*{1,2})?$"
 )
 
+# Downscale huge scans before OCR: keeps memory and time sane on small hosts.
+_MAX_SIDE = 2000
+# PDF pages are rendered at this scale (1.0 = 72 dpi).
+_PDF_SCALE = 2.0
 
-class TesseractOCRProvider(OCRProvider):
+
+def _group_lines(boxes, txts, scores) -> List[Dict[str, Any]]:
     """
-    Real OCR via Tesseract. Needs the Tesseract binary (and Poppler for PDFs).
-    Values are the printed text, verbatim. Confidence is Tesseract's own mean
-    word confidence for the line. Any failure raises: the report goes to
-    'error' rather than showing invented results.
+    Turn OCR text boxes into printed lines. A box whose vertical centre falls
+    inside an existing line's band joins that line; each line is then read left
+    to right. Each line keeps, per character span, the score of the box it came
+    from, so a field's confidence is the score of the boxes that field came from.
+    """
+    items = []
+    for box, txt, sc in zip(boxes, txts, scores):
+        txt = (txt or "").strip()
+        if not txt:
+            continue
+        xs = [float(p[0]) for p in box]
+        ys = [float(p[1]) for p in box]
+        items.append({"x1": min(xs), "y1": min(ys), "x2": max(xs), "y2": max(ys), "text": txt, "score": float(sc)})
+    items.sort(key=lambda i: (i["y1"] + i["y2"]) / 2)
+
+    lines: List[List[dict]] = []
+    for it in items:
+        cy = (it["y1"] + it["y2"]) / 2
+        for line in lines:
+            if min(i["y1"] for i in line) <= cy <= max(i["y2"] for i in line):
+                line.append(it)
+                break
+        else:
+            lines.append([it])
+
+    out = []
+    for line in lines:
+        line.sort(key=lambda i: i["x1"])
+        text, spans = "", []
+        for it in line:
+            if text:
+                text += " "
+            spans.append((len(text), len(text) + len(it["text"]), it["score"]))
+            text += it["text"]
+        out.append({
+            "text": text,
+            "spans": spans,
+            "bbox": {
+                "x1": int(min(i["x1"] for i in line)), "y1": int(min(i["y1"] for i in line)),
+                "x2": int(max(i["x2"] for i in line)), "y2": int(max(i["y2"] for i in line)),
+            },
+        })
+    return out
+
+
+def _span_confidence(spans, start: int, end: int) -> float | None:
+    """Lowest score among the boxes that a matched field's characters came from."""
+    hit = [sc for (s, e, sc) in spans if s < end and start < e]
+    return min(hit) if hit else None
+
+
+def parse_result_lines(lines: List[Dict[str, Any]], page_no: int) -> List[Dict[str, Any]]:
+    results = []
+    for line in lines:
+        m = _LINE.match(line["text"])
+        if not m:
+            continue
+        # A lab result row prints a unit or a reference range. Lines with neither
+        # (e.g. "Page 1 of 1") are layout text, not results.
+        if not m["unit"] and not m["range"]:
+            continue
+        overall = min(sc for (_, _, sc) in line["spans"])
+
+        def conf(group: str) -> float:
+            c = None if m[group] is None else _span_confidence(line["spans"], m.start(group), m.end(group))
+            return round(overall if c is None else c, 2)
+
+        results.append({
+            "test_name": m["name"].strip(),
+            "value": m["value"].replace(" ", ""),
+            "unit": m["unit"],
+            "reference_range": m["range"],
+            "flag": m["flag"],
+            "confidence": round(overall, 2),
+            "confidence_test_name": conf("name"),
+            "confidence_value": conf("value"),
+            "confidence_unit": conf("unit"),
+            "confidence_reference_range": conf("range"),
+            "bounding_box": line["bbox"],
+            "page": page_no,
+        })
+    return results
+
+
+_engine = None
+_engine_lock = threading.Lock()
+
+
+def _get_engine():
+    """Load the OCR models once per process (a few seconds, ~100 MB)."""
+    global _engine
+    with _engine_lock:
+        if _engine is None:
+            from rapidocr import RapidOCR
+            # Lab reports are upright. The text-orientation classifier can flip short
+            # words (it read "g/dL" as "7p/6"), so it stays off.
+            _engine = RapidOCR(params={
+                "Global.use_cls": False,
+                # Text detection runs on the page scaled so its longer side is at most
+                # this many pixels. 960 keeps peak memory near 330 MB, inside a 512 MB host.
+                "Det.limit_type": "max",
+                "Det.limit_side_len": settings.ocr_det_max_side,
+            })
+        return _engine
+
+
+def warm_up() -> None:
+    """Download (if needed) and load the OCR models. Hosts run this at build time."""
+    _get_engine()
+
+
+def _to_images(data: bytes, is_pdf: bool) -> List[Image.Image]:
+    if is_pdf:
+        import pypdfium2 as pdfium
+        pdf = pdfium.PdfDocument(data)
+        try:
+            pages = [pdf[i].render(scale=_PDF_SCALE).to_pil() for i in range(len(pdf))]
+        finally:
+            pdf.close()
+    else:
+        pages = [Image.open(io.BytesIO(data))]
+    out = []
+    for img in pages:
+        img = img.convert("RGB")
+        if max(img.size) > _MAX_SIDE:
+            img.thumbnail((_MAX_SIDE, _MAX_SIDE))
+        out.append(img)
+    return out
+
+
+class RapidOCRProvider(OCRProvider):
+    """
+    Real OCR via RapidOCR (PaddleOCR models on ONNX Runtime). A plain pip
+    install with no system packages, so it runs on any Python host. Values are
+    the printed text, verbatim. Each field's confidence is the recogniser's
+    score for the text box it came from. Any failure raises: the report goes
+    to 'error' rather than showing invented results.
     """
     async def extract_data(self, file_path: str) -> Dict[str, Any]:
         data = await asyncio.to_thread(get_storage().get, file_path)
         if data is None:
             raise FileNotFoundError(f"Stored file missing for {file_path}")
+        return await asyncio.to_thread(self._extract, data, file_path.lower().endswith(".pdf"))
 
-        images = convert_from_bytes(data) if file_path.lower().endswith(".pdf") \
-            else [Image.open(io.BytesIO(data))]
+    def _extract(self, data: bytes, is_pdf: bool) -> Dict[str, Any]:
+        import numpy as np
 
+        engine = _get_engine()
         results: List[Dict[str, Any]] = []
-        for page_no, img in enumerate(images, start=1):
-            d = pytesseract.image_to_data(img, output_type=pytesseract.Output.DICT)
-            lines: Dict[tuple, list] = {}
-            for i, word in enumerate(d["text"]):
-                if word.strip() and float(d["conf"][i]) >= 0:
-                    lines.setdefault((d["block_num"][i], d["par_num"][i], d["line_num"][i]), []).append(i)
-            for idxs in lines.values():
-                text = " ".join(d["text"][i] for i in idxs)
-                m = _LINE.match(text.strip())
-                if not m:
-                    continue
-                x1 = min(d["left"][i] for i in idxs)
-                y1 = min(d["top"][i] for i in idxs)
-                x2 = max(d["left"][i] + d["width"][i] for i in idxs)
-                y2 = max(d["top"][i] + d["height"][i] for i in idxs)
-                results.append({
-                    "test_name": m["name"].strip(),
-                    "value": m["value"].replace(" ", ""),
-                    "unit": m["unit"],
-                    "reference_range": m["range"],
-                    "flag": m["flag"],
-                    "confidence": round(sum(float(d["conf"][i]) for i in idxs) / len(idxs) / 100, 2),
-                    "bounding_box": {"x1": x1, "y1": y1, "x2": x2, "y2": y2},
-                    "page": page_no,
-                })
+        for page_no, img in enumerate(_to_images(data, is_pdf), start=1):
+            out = engine(np.array(img)[:, :, ::-1].copy())  # RGB -> BGR, as OpenCV expects
+            if out.boxes is None or out.txts is None:
+                continue  # blank page
+            results.extend(parse_result_lines(_group_lines(out.boxes, out.txts, out.scores), page_no))
 
-        logger.info("Tesseract extracted %d result lines", len(results))
+        logger.info("OCR extracted %d result lines", len(results))
         # Patient identity is deliberately NOT guessed here (Invariant 3): matching is a separate, human-gated step.
         return {"patient_info": {}, "results": results}
 
@@ -148,6 +267,7 @@ class TesseractOCRProvider(OCRProvider):
 class OCRService:
     def __init__(self, db_session: Session, provider: OCRProvider = None):
         self.db = db_session
+        self.last_error: str | None = None  # why the last process_report failed, for the audit trail
         if provider:
             if isinstance(provider, MockOCRProvider) and settings.environment != "development":
                 raise RuntimeError("MockOCRProvider is strictly prohibited outside development environments.")
@@ -156,8 +276,10 @@ class OCRService:
             if settings.environment != "development":
                 raise RuntimeError("Mock OCR provider is configured, but environment is not 'development'.")
             self.provider = MockOCRProvider()
+        elif settings.ocr_provider in ("rapidocr", "tesseract"):  # "tesseract" kept as an alias for old configs
+            self.provider = RapidOCRProvider()
         else:
-            self.provider = TesseractOCRProvider()
+            raise RuntimeError(f"Unknown OCR_PROVIDER {settings.ocr_provider!r}; use 'rapidocr' or 'mock'.")
 
     async def process_report(self, report_id: uuid.UUID):
         """
@@ -265,8 +387,9 @@ class OCRService:
             self.db.commit()
             logger.info("Processed OCR for report %s", report_id)
 
-        except Exception:
+        except Exception as exc:
             self.db.rollback()
+            self.last_error = f"{type(exc).__name__}: {exc}"[:500]
             report.status = 'error'
             self.db.commit()
             logger.exception("OCR processing failed for report %s", report_id)

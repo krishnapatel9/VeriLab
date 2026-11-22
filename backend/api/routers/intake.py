@@ -42,7 +42,8 @@ def trigger_ocr_background(report_id: uuid.UUID, tenant_id: uuid.UUID):
             resource_type="report",
             resource_id=report_id,
             metadata={"ocr_provider": type(ocr_service.provider).__name__,
-                      "report_status": report.status if report else "missing"},
+                      "report_status": report.status if report else "missing",
+                      **({"error": ocr_service.last_error} if ocr_service.last_error else {})},
             actor_user_id=None,  # system event
             tenant_id=tenant_id,
         )
